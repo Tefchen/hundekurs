@@ -1,9 +1,7 @@
-@page "/gehorsam"
-@page "/apportierarbeit"
-@attribute [Authorize(Policy = Richtlinien.Lesen)]
+@* Gemeinsame Seite für Gehorsam und Niederwild. Aufgerufen über Gehorsam.razor und Apportierarbeit.razor:
+   Zwei eigene Seiten sorgen dafür, dass Blazor beim Wechsel eine neue Instanz anlegt statt die alte weiterzuverwenden. *@
 @implements IDisposable
 @inject PlanungsZustand Zustand
-@inject NavigationManager Navigation
 
 @{
     var termine = Zustand.Nebentermine(Art);
@@ -163,8 +161,7 @@ else
     protected override async Task OnInitializedAsync() =>
         _darfBearbeiten = Ansprueche.DarfBearbeiten((await Anmeldezustand).User);
 
-    private Terminart Art => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("apportier", StringComparison.OrdinalIgnoreCase)
-        ? Terminart.Apportierarbeit : Terminart.Gehorsam;
+    [Parameter, EditorRequired] public Terminart Art { get; set; }
 
     private string Titel => Art == Terminart.Gehorsam ? "Teil 1: Grundgehorsam" : "Nachsuche auf Niederwild";
 
