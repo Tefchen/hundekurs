@@ -1,0 +1,105 @@
+@page "/passwort-aendern"
+@attribute [Authorize]
+@attribute [ExcludeFromInteractiveRouting]
+@using System.ComponentModel.DataAnnotations
+@using Hundekurs.Daten
+@using Microsoft.AspNetCore.Identity
+@inject UserManager<Benutzerkonto> Konten
+@inject SignInManager<Benutzerkonto> Anmeldung
+@inject NavigationManager Navigation
+
+<PageTitle>Passwort ändern – Hundekurs</PageTitle>
+
+<div class="anmeldung">
+    <h1>Passwort ändern</h1>
+
+    @if (_mussAendern)
+    {
+        <p class="befund gelb">Sie sind mit einem Startpasswort angemeldet. Bitte jetzt ein eigenes Passwort vergeben.</p>
+    }
+
+    <EditForm Model="Eingabe" method="post" OnValidSubmit="AendernAsync" FormName="passwort" class="formular">
+        <DataAnnotationsValidator />
+        <label>
+            Bisheriges Passwort
+            <InputText type="password" @bind-Value="Eingabe.Bisher" autocomplete="current-password" />
+            <ValidationMessage For="() => Eingabe.Bisher" />
+        </label>
+        <label>
+            Neues Passwort <small>(mindestens 10 Zeichen; ein Satz aus mehreren Wörtern ist leichter zu merken als Sonderzeichen)</small>
+            <InputText type="password" @bind-Value="Eingabe.Neu" autocomplete="new-password" />
+            <ValidationMessage For="() => Eingabe.Neu" />
+        </label>
+        <label>
+            Neues Passwort wiederholen
+            <InputText type="password" @bind-Value="Eingabe.Wiederholung" autocomplete="new-password" />
+            <ValidationMessage For="() => Eingabe.Wiederholung" />
+        </label>
+        @if (_fehler is not null)
+        {
+            <p class="befund rot">@_fehler</p>
+        }
+        <button type="submit" class="primaer">Passwort speichern</button>
+        @if (!_mussAendern)
+        {
+            <a href="">Abbrechen</a>
+        }
+    </EditForm>
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm] private Passwortdaten Eingabe { get; set; } = default!;
+
+    private bool _mussAendern;
+    private string? _fehler;
+
+    protected override void OnInitialized()
+    {
+        // Beim GET leer anlegen; beim POST füllt Blazor das Modell aus dem Formular.
+        Eingabe ??= new();
+        _mussAendern = HttpContext.User.HasClaim(c => c.Type == Ansprueche.PasswortAendern);
+    }
+
+    private async Task AendernAsync()
+    {
+        var konto = await Konten.GetUserAsync(HttpContext.User);
+        if (konto is null)
+        {
+            Navigation.NavigateTo("anmelden");
+            return;
+        }
+
+        if (Eingabe.Neu == Eingabe.Bisher)
+        {
+            _fehler = "Das neue Passwort muss sich vom bisherigen unterscheiden.";
+            return;
+        }
+
+        konto.MussPasswortAendern = false;
+        var ergebnis = await Konten.ChangePasswordAsync(konto, Eingabe.Bisher, Eingabe.Neu);
+        if (!ergebnis.Succeeded)
+        {
+            _fehler = string.Join(" ", ergebnis.Errors.Select(e => e.Description));
+            return;
+        }
+
+        // Neues Cookie ohne „muss Passwort ändern“; andere offene Sitzungen werden über den neuen Sicherheitsstempel abgemeldet.
+        await Anmeldung.RefreshSignInAsync(konto);
+        Navigation.NavigateTo("");
+    }
+
+    private sealed class Passwortdaten
+    {
+        [Required(ErrorMessage = "Bitte das bisherige Passwort eingeben.")]
+        public string Bisher { get; set; } = "";
+
+        [Required(ErrorMessage = "Bitte ein neues Passwort eingeben.")]
+        [MinLength(10, ErrorMessage = "Das Passwort muss mindestens 10 Zeichen lang sein.")]
+        public string Neu { get; set; } = "";
+
+        [Compare(nameof(Neu), ErrorMessage = "Die beiden Eingaben stimmen nicht überein.")]
+        public string Wiederholung { get; set; } = "";
+    }
+}

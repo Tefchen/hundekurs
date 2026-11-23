@@ -1,5 +1,6 @@
 @page "/gehorsam"
 @page "/apportierarbeit"
+@attribute [Authorize(Policy = Richtlinien.Lesen)]
 @implements IDisposable
 @inject PlanungsZustand Zustand
 @inject NavigationManager Navigation
@@ -24,7 +25,7 @@
 
 @if (termine.Count == 0)
 {
-    <p class="befund gelb">Noch keine Termine. <a href="einstellungen">Kursjahr anlegen</a></p>
+    <p class="befund gelb">Noch keine Termine. <NurBearbeiten><a href="einstellungen">Kursjahr anlegen</a></NurBearbeiten></p>
 }
 else
 {
@@ -40,14 +41,14 @@ else
                     <td>@(t.Status == Terminstatus.Durchgefuehrt ? $"{t.Anwesend.Count} von {t.Erfasst.Count}" : "")</td>
                     <td>@(t.Ausbilder.Count > 0 ? t.Ausbilder.Count.ToString() : "")</td>
                     <td>@t.Notiz</td>
-                    <td class="keindruck"><button @onclick="() => Waehlen(t, gebucht)">@(t.Status == Terminstatus.Durchgefuehrt ? "Liste ändern" : "Liste führen")</button></td>
+                    <td class="keindruck"><NurBearbeiten><button @onclick="() => Waehlen(t, gebucht)">@(t.Status == Terminstatus.Durchgefuehrt ? "Liste ändern" : "Liste führen")</button></NurBearbeiten></td>
                 </tr>
             }
         </tbody>
     </table>
 }
 
-@if (gewaehlt is not null)
+@if (gewaehlt is not null && _darfBearbeiten)
 {
     <section class="formular anwesenheit">
         <h2>Anwesenheit @gewaehlt.Datum.ToString("dddd, dd.MM.yyyy") – @Zustand.GelaendeName(gewaehlt.GelaendeId)</h2>
@@ -102,7 +103,7 @@ else
     </section>
 }
 
-@if (Art == Terminart.Gehorsam && termine.Count > 0)
+@if (Art == Terminart.Gehorsam && termine.Count > 0 && _darfBearbeiten)
 {
     var staende = Zustand.Zulassungen();
     var plaetze = Plaetze();
@@ -154,6 +155,14 @@ else
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState> Anmeldezustand { get; set; } = default!;
+
+    // Anwesenheitslisten und Zulassungsstand enthalten Personendaten: nur für Bearbeiten.
+    private bool _darfBearbeiten;
+
+    protected override async Task OnInitializedAsync() =>
+        _darfBearbeiten = Ansprueche.DarfBearbeiten((await Anmeldezustand).User);
+
     private Terminart Art => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("apportier", StringComparison.OrdinalIgnoreCase)
         ? Terminart.Apportierarbeit : Terminart.Gehorsam;
 

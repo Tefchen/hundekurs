@@ -1,4 +1,5 @@
 @page "/termin/{Id:int}"
+@attribute [Authorize(Policy = Richtlinien.Lesen)]
 @implements IDisposable
 @inject PlanungsZustand Zustand
 
@@ -27,13 +28,15 @@
         @(revier?.Name ?? "–")@(t.RevierFixiert ? " (von Hand festgelegt)" : "")
         @if (offen)
         {
-            <select class="keindruck" value="@(t.RevierFixiert ? t.RevierId : 0)" @onchange="RevierGewaehlt">
-                <option value="0">automatisch</option>
-                @foreach (var r in Zustand.Reviere.Where(r => r.FuerTrainingNutzbar))
-                {
-                    <option value="@r.Id">@r.Name</option>
-                }
-            </select>
+            <NurBearbeiten>
+                <select class="keindruck" value="@(t.RevierFixiert ? t.RevierId : 0)" @onchange="RevierGewaehlt">
+                    <option value="0">automatisch</option>
+                    @foreach (var r in Zustand.Reviere.Where(r => r.FuerTrainingNutzbar))
+                    {
+                        <option value="@r.Id">@r.Name</option>
+                    }
+                </select>
+            </NurBearbeiten>
         }
     </dd>
     <dt>Vorbereitung</dt><dd>@t.Datum.AddDays(-1).ToString("dddd, dd.MM.") (Vorabend)</dd>
@@ -56,12 +59,16 @@
 <div class="werkzeuge keindruck">
     <a href="plan">← Schweißplan</a>
     <span class="trenner"></span>
-    @if (t.Status == TerminStatus.Geplant)
-    {
-        <button @onclick="() => Zustand.Veroeffentlichen(t.Id)">Veröffentlichen</button>
-    }
+    <NurBearbeiten>
+        @if (t.Status == TerminStatus.Geplant)
+        {
+            <button @onclick="() => Zustand.Veroeffentlichen(t.Id)">Veröffentlichen</button>
+        }
+    </NurBearbeiten>
     <button onclick="window.print()">Drucken</button>
-    <a href="wochenmail?termin=@t.Id">Wochenmail für diesen Termin</a>
+    <NurBearbeiten>
+        <a href="wochenmail?termin=@t.Id">Wochenmail für diesen Termin</a>
+    </NurBearbeiten>
 </div>
 
 @if (t.Status == TerminStatus.Durchgefuehrt)
@@ -106,146 +113,148 @@ else
 
 <Befundliste Befunde="befunde" />
 
-<section class="formular keindruck">
-    <h2>Ausbilder im Einsatz</h2>
-    <table class="liste kompakt">
-        <thead><tr><th>Ausbilder</th><th>Vorbereitung @t.Datum.AddDays(-1).ToString("ddd dd.MM.")</th><th>Training @t.Datum.ToString("ddd dd.MM.")</th></tr></thead>
-        <tbody>
-            @foreach (var a in Zustand.Ausbilder())
-            {
-                var id = a.PersonId!.Value;
-                <tr>
-                    <td>@a.Vorname @a.Nachname</td>
-                    <td><input type="checkbox" checked="@_vorbereitung.Contains(id)" @onchange="e => Umschalten(_vorbereitung, id, (bool)e.Value!)" /></td>
-                    <td><input type="checkbox" checked="@_training.Contains(id)" @onchange="e => Umschalten(_training, id, (bool)e.Value!)" /></td>
-                </tr>
-            }
-        </tbody>
-    </table>
-    <button class="primaer" disabled="@_einsatzSpeichert" @onclick="EinsaetzeSpeichern">Ausbilder speichern</button>
-    @if (_einsatzMeldung is not null)
-    {
-        <p class="befund gelb">@_einsatzMeldung</p>
-    }
-</section>
-
-@if (offen)
-{
-    <section class="aktionen keindruck">
-        <h2>Änderungen</h2>
-
-        <fieldset>
-            <legend>Fährten tauschen</legend>
-            <select @bind="_tauschA"><option value="0">Gespann …</option>@foreach (var id in laeufer) {<option value="@id">@Zustand.Name(id)</option>}</select>
-            ⇄
-            <select @bind="_tauschB"><option value="0">Gespann …</option>@foreach (var id in laeufer) {<option value="@id">@Zustand.Name(id)</option>}</select>
-            <button disabled="@(_tauschA == 0 || _tauschB == 0)" @onclick="FaehrtenTauschen">Prüfen</button>
-        </fieldset>
-
-        <fieldset>
-            <legend>Termin tauschen (auch mit der anderen Gruppe)</legend>
-            <select @bind="_tt1"><option value="0">Gespann hier …</option>@foreach (var z in t.Zuteilungen.OrderBy(z => z.GespannId)) {<option value="@z.GespannId">@Zustand.Name(z.GespannId)</option>}</select>
-            ⇄
-            <select @bind="_ttTermin">
-                <option value="0">Termin …</option>
-                @foreach (var x in Zustand.Plan.Chronologisch.Where(x => x.Id != t.Id && x.Status != TerminStatus.Durchgefuehrt))
+<NurBearbeiten>
+    <section class="formular keindruck">
+        <h2>Ausbilder im Einsatz</h2>
+        <table class="liste kompakt">
+            <thead><tr><th>Ausbilder</th><th>Vorbereitung @t.Datum.AddDays(-1).ToString("ddd dd.MM.")</th><th>Training @t.Datum.ToString("ddd dd.MM.")</th></tr></thead>
+            <tbody>
+                @foreach (var a in Zustand.Ausbilder())
                 {
-                    <option value="@x.Id">@x.Datum.ToString("dd.MM.") – Gruppe @x.Gruppe</option>
-                }
-            </select>
-            @if (_ttTermin != 0)
-            {
-                <select @bind="_tt2">
-                    <option value="0">Gespann dort …</option>
-                    @foreach (var z in Zustand.Plan.Termin(_ttTermin).Zuteilungen.Where(z => !t.Zuteilungen.Any(y => y.GespannId == z.GespannId)).OrderBy(z => z.GespannId))
-                    {
-                        <option value="@z.GespannId">@Zustand.Name(z.GespannId)</option>
-                    }
-                </select>
-            }
-            <button disabled="@(_tt1 == 0 || _ttTermin == 0 || _tt2 == 0)" @onclick="TermineTauschen">Prüfen</button>
-            <br /><small>Beide übernehmen nach Möglichkeit die Fährte des anderen.</small>
-        </fieldset>
-
-        <fieldset>
-            <legend>Helferdienst übergeben (selber Tag)</legend>
-            <select @bind="_helfer"><option value="0">Helfer …</option>@foreach (var id in t.Helfer) {<option value="@id">@Zustand.Name(id)</option>}</select>
-            →
-            <select @bind="_vertretung"><option value="0">übernimmt …</option>@foreach (var g in Zustand.Gespanne.Where(g => Zustand.Planer.KannHelfen(t, g.Id) && !t.Helfer.Contains(g.Id))) {<option value="@g.Id">@Zustand.Name(g.Id)</option>}</select>
-            <button disabled="@(_helfer == 0 || _vertretung == 0)" @onclick="HelferVertreten">Prüfen</button>
-        </fieldset>
-
-        <fieldset>
-            <legend>Helferdienst mit anderem Termin tauschen</legend>
-            <select @bind="_helfer2"><option value="0">Helfer hier …</option>@foreach (var id in t.Helfer) {<option value="@id">@Zustand.Name(id)</option>}</select>
-            ⇄
-            <select @bind="_andererTermin">
-                <option value="0">Termin …</option>
-                @foreach (var x in Zustand.Plan.Chronologisch.Where(x => x.Id != t.Id && x.Gruppe == t.Gruppe && x.Status != TerminStatus.Durchgefuehrt))
-                {
-                    <option value="@x.Id">@x.Datum.ToString("dd.MM.")</option>
-                }
-            </select>
-            @if (_andererTermin != 0)
-            {
-                <select @bind="_gegenueber">
-                    <option value="0">Helfer dort …</option>
-                    @foreach (var id in Zustand.Plan.Termin(_andererTermin).Helfer)
-                    {
-                        <option value="@id">@Zustand.Name(id)</option>
-                    }
-                </select>
-            }
-            <button disabled="@(_helfer2 == 0 || _andererTermin == 0 || _gegenueber == 0)" @onclick="HelferTauschen">Prüfen</button>
-        </fieldset>
-
-        <fieldset>
-            <legend>Abmelden</legend>
-            <select @bind="_abmelden">
-                <option value="0">Gespann …</option>
-                @foreach (var g in Zustand.Gespanne.Where(g => (g.Gruppe == t.Gruppe || t.Gaeste.Contains(g.Id) || t.Helfer.Contains(g.Id)) && !t.Abgemeldet.Contains(g.Id)))
-                {
-                    <option value="@g.Id">@Zustand.Name(g.Id)</option>
-                }
-            </select>
-            <button disabled="@(_abmelden == 0)" @onclick="Abmelden">Prüfen</button>
-        </fieldset>
-
-        <fieldset>
-            <legend>Nachholen / wieder anmelden</legend>
-            <select @bind="_nachholen">
-                <option value="0">Gespann …</option>
-                @foreach (var g in Zustand.Gespanne.Where(g => !laeufer.Contains(g.Id) && !t.Helfer.Contains(g.Id)))
-                {
-                    <option value="@g.Id">@Zustand.Name(g.Id) (Gruppe @g.Gruppe)</option>
-                }
-            </select>
-            <button disabled="@(_nachholen == 0)" @onclick="Nachholen">Prüfen</button>
-        </fieldset>
-
-        <fieldset>
-            <legend>Als durchgeführt erfassen</legend>
-            <table class="liste kompakt">
-                @foreach (var z in t.Zuteilungen.OrderBy(z => z.FaehrteNr))
-                {
+                    var id = a.PersonId!.Value;
                     <tr>
-                        <td>@revier?.Kuerzel @z.FaehrteNr</td>
-                        <td>@Zustand.Name(z.GespannId)</td>
-                        <td>
-                            <select value="@ErgebnisVon(z.GespannId)" @onchange="e => _ergebnisse[z.GespannId] = Enum.Parse<LaufErgebnis>(e.Value!.ToString()!)">
-                                @foreach (var e in Enum.GetValues<LaufErgebnis>())
-                                {
-                                    <option value="@e">@Ergebnis(e)</option>
-                                }
-                            </select>
-                        </td>
+                        <td>@a.Vorname @a.Nachname</td>
+                        <td><input type="checkbox" checked="@_vorbereitung.Contains(id)" @onchange="e => Umschalten(_vorbereitung, id, (bool)e.Value!)" /></td>
+                        <td><input type="checkbox" checked="@_training.Contains(id)" @onchange="e => Umschalten(_training, id, (bool)e.Value!)" /></td>
                     </tr>
                 }
-            </table>
-            <button @onclick="Durchfuehren">Prüfen</button>
-        </fieldset>
+            </tbody>
+        </table>
+        <button class="primaer" disabled="@_einsatzSpeichert" @onclick="EinsaetzeSpeichern">Ausbilder speichern</button>
+        @if (_einsatzMeldung is not null)
+        {
+            <p class="befund gelb">@_einsatzMeldung</p>
+        }
     </section>
-}
+
+    @if (offen)
+    {
+        <section class="aktionen keindruck">
+            <h2>Änderungen</h2>
+
+            <fieldset>
+                <legend>Fährten tauschen</legend>
+                <select @bind="_tauschA"><option value="0">Gespann …</option>@foreach (var id in laeufer) {<option value="@id">@Zustand.Name(id)</option>}</select>
+                ⇄
+                <select @bind="_tauschB"><option value="0">Gespann …</option>@foreach (var id in laeufer) {<option value="@id">@Zustand.Name(id)</option>}</select>
+                <button disabled="@(_tauschA == 0 || _tauschB == 0)" @onclick="FaehrtenTauschen">Prüfen</button>
+            </fieldset>
+
+            <fieldset>
+                <legend>Termin tauschen (auch mit der anderen Gruppe)</legend>
+                <select @bind="_tt1"><option value="0">Gespann hier …</option>@foreach (var z in t.Zuteilungen.OrderBy(z => z.GespannId)) {<option value="@z.GespannId">@Zustand.Name(z.GespannId)</option>}</select>
+                ⇄
+                <select @bind="_ttTermin">
+                    <option value="0">Termin …</option>
+                    @foreach (var x in Zustand.Plan.Chronologisch.Where(x => x.Id != t.Id && x.Status != TerminStatus.Durchgefuehrt))
+                    {
+                        <option value="@x.Id">@x.Datum.ToString("dd.MM.") – Gruppe @x.Gruppe</option>
+                    }
+                </select>
+                @if (_ttTermin != 0)
+                {
+                    <select @bind="_tt2">
+                        <option value="0">Gespann dort …</option>
+                        @foreach (var z in Zustand.Plan.Termin(_ttTermin).Zuteilungen.Where(z => !t.Zuteilungen.Any(y => y.GespannId == z.GespannId)).OrderBy(z => z.GespannId))
+                        {
+                            <option value="@z.GespannId">@Zustand.Name(z.GespannId)</option>
+                        }
+                    </select>
+                }
+                <button disabled="@(_tt1 == 0 || _ttTermin == 0 || _tt2 == 0)" @onclick="TermineTauschen">Prüfen</button>
+                <br /><small>Beide übernehmen nach Möglichkeit die Fährte des anderen.</small>
+            </fieldset>
+
+            <fieldset>
+                <legend>Helferdienst übergeben (selber Tag)</legend>
+                <select @bind="_helfer"><option value="0">Helfer …</option>@foreach (var id in t.Helfer) {<option value="@id">@Zustand.Name(id)</option>}</select>
+                →
+                <select @bind="_vertretung"><option value="0">übernimmt …</option>@foreach (var g in Zustand.Gespanne.Where(g => Zustand.Planer.KannHelfen(t, g.Id) && !t.Helfer.Contains(g.Id))) {<option value="@g.Id">@Zustand.Name(g.Id)</option>}</select>
+                <button disabled="@(_helfer == 0 || _vertretung == 0)" @onclick="HelferVertreten">Prüfen</button>
+            </fieldset>
+
+            <fieldset>
+                <legend>Helferdienst mit anderem Termin tauschen</legend>
+                <select @bind="_helfer2"><option value="0">Helfer hier …</option>@foreach (var id in t.Helfer) {<option value="@id">@Zustand.Name(id)</option>}</select>
+                ⇄
+                <select @bind="_andererTermin">
+                    <option value="0">Termin …</option>
+                    @foreach (var x in Zustand.Plan.Chronologisch.Where(x => x.Id != t.Id && x.Gruppe == t.Gruppe && x.Status != TerminStatus.Durchgefuehrt))
+                    {
+                        <option value="@x.Id">@x.Datum.ToString("dd.MM.")</option>
+                    }
+                </select>
+                @if (_andererTermin != 0)
+                {
+                    <select @bind="_gegenueber">
+                        <option value="0">Helfer dort …</option>
+                        @foreach (var id in Zustand.Plan.Termin(_andererTermin).Helfer)
+                        {
+                            <option value="@id">@Zustand.Name(id)</option>
+                        }
+                    </select>
+                }
+                <button disabled="@(_helfer2 == 0 || _andererTermin == 0 || _gegenueber == 0)" @onclick="HelferTauschen">Prüfen</button>
+            </fieldset>
+
+            <fieldset>
+                <legend>Abmelden</legend>
+                <select @bind="_abmelden">
+                    <option value="0">Gespann …</option>
+                    @foreach (var g in Zustand.Gespanne.Where(g => (g.Gruppe == t.Gruppe || t.Gaeste.Contains(g.Id) || t.Helfer.Contains(g.Id)) && !t.Abgemeldet.Contains(g.Id)))
+                    {
+                        <option value="@g.Id">@Zustand.Name(g.Id)</option>
+                    }
+                </select>
+                <button disabled="@(_abmelden == 0)" @onclick="Abmelden">Prüfen</button>
+            </fieldset>
+
+            <fieldset>
+                <legend>Nachholen / wieder anmelden</legend>
+                <select @bind="_nachholen">
+                    <option value="0">Gespann …</option>
+                    @foreach (var g in Zustand.Gespanne.Where(g => !laeufer.Contains(g.Id) && !t.Helfer.Contains(g.Id)))
+                    {
+                        <option value="@g.Id">@Zustand.Name(g.Id) (Gruppe @g.Gruppe)</option>
+                    }
+                </select>
+                <button disabled="@(_nachholen == 0)" @onclick="Nachholen">Prüfen</button>
+            </fieldset>
+
+            <fieldset>
+                <legend>Als durchgeführt erfassen</legend>
+                <table class="liste kompakt">
+                    @foreach (var z in t.Zuteilungen.OrderBy(z => z.FaehrteNr))
+                    {
+                        <tr>
+                            <td>@revier?.Kuerzel @z.FaehrteNr</td>
+                            <td>@Zustand.Name(z.GespannId)</td>
+                            <td>
+                                <select value="@ErgebnisVon(z.GespannId)" @onchange="e => _ergebnisse[z.GespannId] = Enum.Parse<LaufErgebnis>(e.Value!.ToString()!)">
+                                    @foreach (var e in Enum.GetValues<LaufErgebnis>())
+                                    {
+                                        <option value="@e">@Ergebnis(e)</option>
+                                    }
+                                </select>
+                            </td>
+                        </tr>
+                    }
+                </table>
+                <button @onclick="Durchfuehren">Prüfen</button>
+            </fieldset>
+        </section>
+    }
+</NurBearbeiten>
 
 @if (_vorschlag is not null)
 {

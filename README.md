@@ -13,7 +13,7 @@ Grundgerüst der Kursverwaltung. Konzept und offene Fragen: `../Planung/KONZEPT.
 | `tests/Hundekurs.Planung.Tests` | 50 Tests für Planung, Tausch, Wochenmail, Kalender, Zulassung, km und Routendienst | grün |
 | `tests/Hundekurs.Daten.Tests` | 12 Tests: Speichern und Laden mit SQLite im Arbeitsspeicher | neu |
 
-Noch nicht enthalten: Login und Rollen (erst nötig, wenn andere zugreifen), Nachweise, Prüfungen, Kursabrechnung, Abschluss eines km-Abrechnungszeitraums.
+Noch nicht enthalten: Nachweise, Prüfungen, Kursabrechnung, Abschluss eines km-Abrechnungszeitraums.
 
 ## Starten
 
@@ -27,6 +27,36 @@ dotnet run --project src/Hundekurs.Web --launch-profile echt     # echte Daten
 ```
 
 Dann im Browser `http://localhost:5155` öffnen. Die App ist nur auf dem eigenen Rechner erreichbar.
+
+Mit Demodaten gibt es lokal automatisch das Konto **admin** mit dem Passwort **demo-passwort** (Rolle Verwaltung).
+
+## Anmeldung und Rollen
+
+- Jede Seite außer der Anmeldung verlangt ein Konto (ASP.NET Core Identity, Tabellen `AspNet…` in derselben SQLite-Datei).
+- Jedes Konto hat genau eine Rolle:
+
+  | Rolle | Darf |
+  |---|---|
+  | Lesen | Übersicht, Schweißplan, Termine und Gehorsam/Niederwild ansehen und drucken; keine Personen-, Gebühren-, Auslagen- oder km-Daten, keine Anwesenheitslisten |
+  | Bearbeiten | alle Kursdaten pflegen |
+  | Verwaltung | wie Bearbeiten, dazu Seite **Konten**: anlegen, Rolle ändern, Startpasswort vergeben, sperren |
+
+- Neue Konten und vergessene Passwörter: Die Verwaltung vergibt ein Startpasswort (wird nur einmal angezeigt). Beim ersten Login muss ein eigenes Passwort mit mindestens 10 Zeichen gesetzt werden.
+- Nach 5 Fehlversuchen ist ein Konto 15 Minuten gesperrt. Gesperrte Konten, neue Rollen und zurückgesetzte Passwörter wirken in offenen Fenstern nach spätestens 5 Minuten.
+- Leserecht wird zusätzlich in der Datenebene durchgesetzt: `HundekursDb` lehnt Änderungen an Kursdaten ab, wenn der angemeldete Benutzer nur lesen darf. Der Name des angemeldeten Benutzers erscheint in der Historie und in `ErstelltVon`/`GeaendertVon`.
+- **Erstes Konto mit echten Daten / auf dem Server:** Solange es kein Konto gibt, legt die App beim Start eines mit der Rolle Verwaltung an, wenn diese beiden Einstellungen gesetzt sind (Umgebungsvariablen, z. B. in `app.env`):
+  ```
+  Erstkonto__Benutzername=franziska
+  Erstkonto__Passwort=<vorläufiges Passwort, mind. 10 Zeichen>
+  ```
+  Beim ersten Login muss das Passwort geändert werden. Danach beide Zeilen wieder entfernen.
+  Lokal mit echten Daten (`--launch-profile echt`) gehen dafür User Secrets:
+  ```powershell
+  cd src/Hundekurs.Web
+  dotnet user-secrets set "Erstkonto:Benutzername" "franziska"
+  dotnet user-secrets set "Erstkonto:Passwort" "<vorläufiges Passwort>"
+  ```
+- Die Schlüssel für Anmelde-Cookies liegen im Unterordner `Schluessel` neben der Datenbank.
 
 ## Datenbank
 

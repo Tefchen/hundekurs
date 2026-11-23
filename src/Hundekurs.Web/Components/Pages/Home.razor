@@ -1,4 +1,5 @@
 ﻿@page "/"
+@attribute [Authorize(Policy = Richtlinien.Lesen)]
 @implements IDisposable
 @inject PlanungsZustand Zustand
 
@@ -45,7 +46,7 @@
 }
 @if (gehorsam.Count == 0)
 {
-    <p class="befund gelb">Noch kein Kursjahr angelegt. <a href="einstellungen">Kursjahr anlegen</a></p>
+    <p class="befund gelb">Noch kein Kursjahr angelegt. <NurBearbeiten><a href="einstellungen">Kursjahr anlegen</a></NurBearbeiten></p>
 }
 else
 {
@@ -58,32 +59,34 @@ else
         }
     </p>
 }
-<p>
-    km-Berechnung: @(Zustand.RoutendienstVerfuegbar ? "Routendienst eingerichtet" : "kein Routendienst – km nur von Hand")
-    · <a href="kilometer">zur Abrechnung</a>
-</p>
+<NurBearbeiten>
+    <p>
+        km-Berechnung: @(Zustand.RoutendienstVerfuegbar ? "Routendienst eingerichtet" : "kein Routendienst – km nur von Hand")
+        · <a href="kilometer">zur Abrechnung</a>
+    </p>
 
-@if (Zustand.Gespanne.Count == 0)
-{
-    <p class="befund gelb">Noch keine Teilnehmer mit Gruppe erfasst. <a href="teilnehmer">Teilnehmer anlegen</a></p>
-}
-@if (!Zustand.Reviere.Any(r => r.FuerTrainingNutzbar))
-{
-    <p class="befund gelb">Noch kein Trainingsrevier angelegt. <a href="reviere">Revier anlegen</a></p>
-}
+    @if (Zustand.Gespanne.Count == 0)
+    {
+        <p class="befund gelb">Noch keine Teilnehmer mit Gruppe erfasst. <a href="teilnehmer">Teilnehmer anlegen</a></p>
+    }
+    @if (!Zustand.Reviere.Any(r => r.FuerTrainingNutzbar))
+    {
+        <p class="befund gelb">Noch kein Trainingsrevier angelegt. <a href="reviere">Revier anlegen</a></p>
+    }
 
-<h2>Datenbank</h2>
-<p>
-    <code>@Zustand.Info.Pfad</code><br />
-    @if (Zustand.Info.Demodaten)
-    {
-        <small>Demodatenbank mit erfundenen Daten. Für echte Daten mit <code>dotnet run --launch-profile echt</code> starten – das nutzt eine eigene Datei.</small>
-    }
-    else
-    {
-        <small>Echte Daten. Beim Start wird täglich eine Sicherung im Unterordner „Sicherungen“ angelegt.</small>
-    }
-</p>
+    <h2>Datenbank</h2>
+    <p>
+        <code>@Zustand.Info.Pfad</code><br />
+        @if (Zustand.Info.Demodaten)
+        {
+            <small>Demodatenbank mit erfundenen Daten. Für echte Daten mit <code>dotnet run --launch-profile echt</code> starten – das nutzt eine eigene Datei.</small>
+        }
+        else
+        {
+            <small>Echte Daten. Beim Start wird täglich eine Sicherung im Unterordner „Sicherungen“ angelegt.</small>
+        }
+    </p>
+</NurBearbeiten>
 
 @code {
     protected override void OnInitialized() => Zustand.Geaendert += Aktualisieren;

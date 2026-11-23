@@ -1,0 +1,81 @@
+@page "/anmelden"
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@using System.ComponentModel.DataAnnotations
+@using Hundekurs.Daten
+@using Microsoft.AspNetCore.Identity
+@inject SignInManager<Benutzerkonto> Anmeldung
+@inject NavigationManager Navigation
+@inject ILogger<Anmelden> Protokoll
+
+<PageTitle>Anmelden – Hundekurs</PageTitle>
+
+<div class="anmeldung">
+    <h1>Anmelden</h1>
+
+    <EditForm Model="Eingabe" method="post" OnValidSubmit="AnmeldenAsync" FormName="anmelden" class="formular">
+        <DataAnnotationsValidator />
+        <label>
+            Benutzername
+            <InputText @bind-Value="Eingabe.Benutzername" autocomplete="username" autofocus />
+            <ValidationMessage For="() => Eingabe.Benutzername" />
+        </label>
+        <label>
+            Passwort
+            <InputText type="password" @bind-Value="Eingabe.Passwort" autocomplete="current-password" />
+            <ValidationMessage For="() => Eingabe.Passwort" />
+        </label>
+        @if (_fehler is not null)
+        {
+            <p class="befund rot">@_fehler</p>
+        }
+        <button type="submit" class="primaer">Anmelden</button>
+    </EditForm>
+
+    <p class="legende">Passwort vergessen? Die Kontenverwaltung im Verein vergibt ein neues Startpasswort.</p>
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm] private Anmeldedaten Eingabe { get; set; } = default!;
+
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private string? _fehler;
+
+    // Beim GET leer anlegen; beim POST füllt Blazor das Modell aus dem Formular.
+    protected override void OnInitialized() => Eingabe ??= new();
+
+    private async Task AnmeldenAsync()
+    {
+        var ergebnis = await Anmeldung.PasswordSignInAsync(Eingabe.Benutzername.Trim(), Eingabe.Passwort, isPersistent: false, lockoutOnFailure: true);
+        if (ergebnis.Succeeded)
+        {
+            Protokoll.LogInformation("Anmeldung: {Benutzer}", Eingabe.Benutzername.Trim());
+            Navigation.NavigateTo(SicheresZiel(ReturnUrl));
+            return;
+        }
+
+        Protokoll.LogWarning("Anmeldung fehlgeschlagen: {Benutzer} von {Adresse}{Gesperrt}",
+            Eingabe.Benutzername.Trim(), HttpContext.Connection.RemoteIpAddress, ergebnis.IsLockedOut ? " (gesperrt)" : "");
+        _fehler = ergebnis.IsLockedOut
+            ? "Das Konto ist gesperrt – nach zu vielen Fehlversuchen für 15 Minuten, sonst bis die Kontenverwaltung es wieder freigibt."
+            : "Benutzername oder Passwort stimmen nicht.";
+    }
+
+    /// <summary>Nur Ziele innerhalb der App, damit niemand über einen präparierten Link auf eine fremde Seite umleiten kann.</summary>
+    private static string SicheresZiel(string? ziel) =>
+        ziel is { Length: > 0 } && ziel.StartsWith('/') && !ziel.StartsWith("//") && !ziel.StartsWith("/\\") && !ziel.StartsWith("/anmelden")
+            ? ziel
+            : "/";
+
+    private sealed class Anmeldedaten
+    {
+        [Required(ErrorMessage = "Bitte den Benutzernamen eingeben.")]
+        public string Benutzername { get; set; } = "";
+
+        [Required(ErrorMessage = "Bitte das Passwort eingeben.")]
+        public string Passwort { get; set; } = "";
+    }
+}

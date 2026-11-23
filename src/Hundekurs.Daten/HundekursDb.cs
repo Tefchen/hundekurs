@@ -1,9 +1,11 @@
 using Hundekurs.Domain;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace Hundekurs.Daten;
 
-public class HundekursDb(DbContextOptions<HundekursDb> options) : DbContext(options)
+/// <summary>Kursdaten und Anmeldekonten (Identity-Tabellen „AspNet…“) in einer SQLite-Datei.</summary>
+public class HundekursDb(DbContextOptions<HundekursDb> options) : IdentityDbContext<Benutzerkonto>(options)
 {
     // Stammdaten
     public DbSet<Person> Personen => Set<Person>();
@@ -50,19 +52,36 @@ public class HundekursDb(DbContextOptions<HundekursDb> options) : DbContext(opti
     // Historie
     public DbSet<Aenderungsprotokoll> Aenderungsprotokoll => Set<Aenderungsprotokoll>();
 
-    /// <summary>Name für ErstelltVon/GeaendertVon. Bis es einen Login gibt: der Windows-Benutzer.</summary>
-    public string Benutzer { get; set; } = Environment.UserName;
+    /// <summary>Name für ErstelltVon/GeaendertVon und die Historie: der angemeldete Benutzer, sonst der Betriebssystem-Benutzer.</summary>
+    public string Benutzer { get; set; } = Benutzerkontext.Aktuell?.Name ?? Environment.UserName;
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        SchreibrechtPruefen();
         Stempeln();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
+        SchreibrechtPruefen();
         Stempeln();
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    /// <summary>
+    /// Serverseitige Sperre: Konten mit reinem Leserecht dürfen keine Kursdaten ändern, auch wenn die Oberfläche einmal etwas anbietet.
+    /// Anmeldedaten (eigenes Passwort, Fehlversuche) sind ausgenommen.
+    /// </summary>
+    private void SchreibrechtPruefen()
+    {
+        if (Benutzerkontext.Aktuell is not { DarfBearbeiten: false } benutzer) return;
+        var kursdaten = typeof(Entitaet).Assembly;
+        var betroffen = ChangeTracker.Entries().Any(e =>
+            (e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted) &&
+            e.Entity.GetType().Assembly == kursdaten);
+        if (betroffen)
+            throw new InvalidOperationException($"{benutzer.Name} hat nur Leserecht und kann keine Kursdaten ändern.");
     }
 
     private void Stempeln()
@@ -85,6 +104,10 @@ public class HundekursDb(DbContextOptions<HundekursDb> options) : DbContext(opti
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
+        // Identity-Tabellen (Konten, Rollen, Anmeldungen)
+        base.OnModelCreating(mb);
+        mb.Entity<Benutzerkonto>().Property(b => b.Anzeigename).HasMaxLength(100);
+
         // Personen und Hunde: Löschen einer Person darf keine Hunde mitreißen
         mb.Entity<Hund>().HasOne(h => h.Fuehrer).WithMany().HasForeignKey(h => h.FuehrerId).OnDelete(DeleteBehavior.SetNull);
         mb.Entity<Hund>().HasOne(h => h.Eigentuemer).WithMany().HasForeignKey(h => h.EigentuemerId).OnDelete(DeleteBehavior.SetNull);

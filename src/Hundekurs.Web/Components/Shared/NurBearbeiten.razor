@@ -1,0 +1,11 @@
+@* Zeigt den Inhalt nur Konten mit Recht „Bearbeiten“ oder „Verwaltung“, sonst den optionalen Inhalt „Sonst“.
+   Nur Anzeige: Die eigentliche Sperre sitzt in der Datenebene (HundekursDb.SchreibrechtPruefen). *@
+<AuthorizeView Policy="@Richtlinien.Bearbeiten">
+    <Authorized>@ChildContent</Authorized>
+    <NotAuthorized>@Sonst</NotAuthorized>
+</AuthorizeView>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Sonst { get; set; }
+}

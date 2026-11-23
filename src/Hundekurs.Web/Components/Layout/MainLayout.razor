@@ -3,23 +3,39 @@
 
 <header class="kopf keindruck">
     <a class="marke" href="">Hundekurs</a>
-    <nav>
-        <NavLink href="" Match="NavLinkMatch.All">Übersicht</NavLink>
-        <NavLink href="gehorsam">Gehorsam</NavLink>
-        <NavLink href="plan">Schweißplan</NavLink>
-        <NavLink href="apportierarbeit">Niederwild</NavLink>
-        <NavLink href="teilnehmer">Teilnehmer</NavLink>
-        <NavLink href="gebuehren">Gebühren</NavLink>
-        <NavLink href="auslagen">Auslagen</NavLink>
-        <NavLink href="personen">Personen</NavLink>
-        <NavLink href="hunde">Hunde</NavLink>
-        <NavLink href="wochenmail">Wochenmail</NavLink>
-        <NavLink href="kilometer">km</NavLink>
-        <NavLink href="reviere">Reviere</NavLink>
-        <NavLink href="einstellungen">Einstellungen</NavLink>
-        <NavLink href="historie">Historie</NavLink>
-    </nav>
-    <span class="hinweis">@Zustand.Kursbezeichnung · @(Zustand.Info.Demodaten ? "Demodaten" : "echte Daten") · lokal</span>
+    <AuthorizeView>
+        <Authorized>
+            <nav>
+                <NavLink href="" Match="NavLinkMatch.All">Übersicht</NavLink>
+                <NavLink href="gehorsam">Gehorsam</NavLink>
+                <NavLink href="plan">Schweißplan</NavLink>
+                <NavLink href="apportierarbeit">Niederwild</NavLink>
+                <NurBearbeiten>
+                    <NavLink href="teilnehmer">Teilnehmer</NavLink>
+                    <NavLink href="gebuehren">Gebühren</NavLink>
+                    <NavLink href="auslagen">Auslagen</NavLink>
+                    <NavLink href="personen">Personen</NavLink>
+                    <NavLink href="hunde">Hunde</NavLink>
+                    <NavLink href="wochenmail">Wochenmail</NavLink>
+                    <NavLink href="kilometer">km</NavLink>
+                    <NavLink href="reviere">Reviere</NavLink>
+                    <NavLink href="einstellungen">Einstellungen</NavLink>
+                    <NavLink href="historie">Historie</NavLink>
+                </NurBearbeiten>
+                <AuthorizeView Policy="@Richtlinien.Verwaltung" Context="verwaltung">
+                    <NavLink href="benutzer">Konten</NavLink>
+                </AuthorizeView>
+            </nav>
+            <span class="hinweis">@Zustand.Kursbezeichnung@(Zustand.Info.Demodaten ? " · Demodaten" : "")</span>
+            <span class="konto">
+                <a href="passwort-aendern" title="Passwort ändern">@Ansprueche.Name(context.User)</a>
+                <form action="abmelden" method="post" data-enhance="false">
+                    <AntiforgeryToken />
+                    <button type="submit">Abmelden</button>
+                </form>
+            </span>
+        </Authorized>
+    </AuthorizeView>
 </header>
 
 <main>

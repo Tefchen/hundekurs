@@ -1,0 +1,246 @@
+@page "/benutzer"
+@attribute [Authorize(Policy = Richtlinien.Verwaltung)]
+@using Hundekurs.Daten
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory Bereiche
+@inject ILogger<Benutzer> Protokoll
+
+<PageTitle>Konten – Hundekurs</PageTitle>
+
+<h1>Konten</h1>
+
+<p>
+    Wer sich anmelden darf und mit welchem Recht.
+    <b>Lesen</b> sieht Übersicht, Schweißplan und Termine; <b>Bearbeiten</b> pflegt alle Kursdaten; <b>Verwaltung</b> zusätzlich die Konten.
+    Änderungen an Rolle, Passwort oder Sperre wirken in bereits geöffneten Fenstern nach spätestens 5 Minuten.
+</p>
+
+@if (_startpasswort is not null)
+{
+    <section class="formular">
+        <h2>Startpasswort für @_startpasswort.Value.Name</h2>
+        <p><span class="startpasswort">@_startpasswort.Value.Passwort</span></p>
+        <p>Es wird nur jetzt angezeigt. Bitte persönlich oder telefonisch weitergeben, nicht per Mail. Beim ersten Login muss ein eigenes Passwort vergeben werden.</p>
+        <button @onclick="() => _startpasswort = null">Notiert, ausblenden</button>
+    </section>
+}
+
+@if (_meldung is not null)
+{
+    <p class="befund @(_fehler ? "rot" : "gruen")">@_meldung</p>
+}
+
+<table class="liste">
+    <thead>
+        <tr><th>Benutzername</th><th>Name</th><th>Rolle</th><th>Status</th><th class="keindruck"></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var k in _konten)
+        {
+            var selbst = k.Id == _eigeneId;
+            <tr class="@(k.Gesperrt ? "inaktiv" : "")">
+                <td>@k.Benutzername</td>
+                <td>@k.Anzeigename</td>
+                <td>
+                    <select value="@k.Rolle" disabled="@selbst" @onchange="e => RolleSetzen(k, e.Value?.ToString())">
+                        @foreach (var r in Rollen.Alle)
+                        {
+                            <option value="@r">@r</option>
+                        }
+                    </select>
+                </td>
+                <td>@Status(k)</td>
+                <td class="keindruck">
+                    <button class="klein" @onclick="() => Zuruecksetzen(k)">Startpasswort neu</button>
+                    @if (!selbst)
+                    {
+                        @if (k.Gesperrt)
+                        {
+                            <button class="klein" @onclick="() => Entsperren(k)">Entsperren</button>
+                        }
+                        else
+                        {
+                            <button class="klein" @onclick="() => Sperren(k)">Sperren</button>
+                        }
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<section class="formular">
+    <h2>Neues Konto</h2>
+    <div class="felder">
+        <label>Benutzername <small>(zum Anmelden; Kleinbuchstaben, Ziffern, - . _)</small><input @bind="_neuName" autocomplete="off" /></label>
+        <label>Name <small>(erscheint in Kopfzeile und Historie)</small><input @bind="_neuAnzeigename" autocomplete="off" /></label>
+        <label>
+            Rolle
+            <select @bind="_neuRolle">
+                @foreach (var r in Rollen.Alle)
+                {
+                    <option value="@r">@Rollen.Beschreibung(r)</option>
+                }
+            </select>
+        </label>
+    </div>
+    <button class="primaer" disabled="@(string.IsNullOrWhiteSpace(_neuName))" @onclick="Anlegen">Konto anlegen</button>
+</section>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> Anmeldezustand { get; set; } = default!;
+
+    private sealed record Eintrag(string Id, string Benutzername, string Anzeigename, string Rolle, bool Gesperrt, bool MussPasswortAendern, DateTimeOffset? GesperrtBis);
+
+    private List<Eintrag> _konten = [];
+    private string? _eigeneId;
+    private string? _meldung;
+    private bool _fehler;
+    private (string Name, string Passwort)? _startpasswort;
+
+    private string _neuName = "";
+    private string _neuAnzeigename = "";
+    private string _neuRolle = Rollen.Lesen;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var zustand = await Anmeldezustand;
+        await using var bereich = Bereiche.CreateAsyncScope();
+        var konten = bereich.ServiceProvider.GetRequiredService<UserManager<Benutzerkonto>>();
+        _eigeneId = konten.GetUserId(zustand.User);
+        await LadenAsync(konten);
+    }
+
+    private async Task LadenAsync(UserManager<Benutzerkonto> konten)
+    {
+        var liste = new List<Eintrag>();
+        foreach (var b in await konten.Users.OrderBy(b => b.UserName).ToListAsync())
+        {
+            var rolle = (await konten.GetRolesAsync(b)).FirstOrDefault() ?? "–";
+            var gesperrt = b.LockoutEnd is { } ende && ende > DateTimeOffset.UtcNow;
+            liste.Add(new Eintrag(b.Id, b.UserName ?? "", b.Anzeigename, rolle, gesperrt, b.MussPasswortAendern, b.LockoutEnd));
+        }
+        _konten = liste;
+    }
+
+    private static string Status(Eintrag k) =>
+        k.Gesperrt
+            ? k.GesperrtBis is { } bis && bis < DateTimeOffset.UtcNow.AddYears(1)
+                ? $"vorübergehend gesperrt bis {bis.ToLocalTime():HH:mm} (Fehlversuche)"
+                : "gesperrt"
+            : k.MussPasswortAendern ? "aktiv, Startpasswort noch nicht geändert" : "aktiv";
+
+    /// <summary>Jede Aktion in eigenem DI-Bereich, damit der Datenbankkontext nicht über die ganze Sitzung lebt.</summary>
+    private async Task Ausfuehren(string erfolg, Func<UserManager<Benutzerkonto>, Task<string?>> aktion)
+    {
+        await using var bereich = Bereiche.CreateAsyncScope();
+        var konten = bereich.ServiceProvider.GetRequiredService<UserManager<Benutzerkonto>>();
+        try
+        {
+            var fehler = await aktion(konten);
+            _meldung = fehler ?? erfolg;
+            _fehler = fehler is not null;
+            if (fehler is null) Protokoll.LogInformation("Konten: {Aktion}", erfolg);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _meldung = ex.Message;
+            _fehler = true;
+        }
+        await LadenAsync(konten);
+    }
+
+    private static string? Fehler(IdentityResult ergebnis) =>
+        ergebnis.Succeeded ? null : string.Join(" ", ergebnis.Errors.Select(e => e.Description));
+
+    private bool LetzteVerwaltung(Eintrag k) =>
+        k.Rolle == Rollen.Verwaltung && _konten.Count(x => x.Rolle == Rollen.Verwaltung && !x.Gesperrt) <= 1;
+
+    private async Task Anlegen()
+    {
+        var name = _neuName.Trim().ToLowerInvariant();
+        var anzeigename = string.IsNullOrWhiteSpace(_neuAnzeigename) ? name : _neuAnzeigename.Trim();
+        var rolle = _neuRolle;
+        var passwort = Startpasswort.Erzeugen();
+
+        await Ausfuehren($"Konto „{name}“ angelegt ({rolle}).", async konten =>
+        {
+            var konto = new Benutzerkonto { UserName = name, Anzeigename = anzeigename, MussPasswortAendern = true };
+            var fehler = Fehler(await konten.CreateAsync(konto, passwort));
+            if (fehler is not null) return fehler;
+            return Fehler(await konten.AddToRoleAsync(konto, rolle));
+        });
+
+        if (!_fehler)
+        {
+            _startpasswort = (name, passwort);
+            _neuName = _neuAnzeigename = "";
+            _neuRolle = Rollen.Lesen;
+        }
+    }
+
+    private async Task RolleSetzen(Eintrag k, string? neu)
+    {
+        if (neu is null || neu == k.Rolle || !Rollen.Alle.Contains(neu)) return;
+        string rolle = neu;
+        if (LetzteVerwaltung(k))
+        {
+            _meldung = "Es muss mindestens ein aktives Konto mit Verwaltung geben.";
+            _fehler = true;
+            return;
+        }
+
+        await Ausfuehren($"{k.Anzeigename} hat jetzt die Rolle {rolle}.", async konten =>
+        {
+            var konto = await konten.FindByIdAsync(k.Id) ?? throw new InvalidOperationException("Konto nicht gefunden.");
+            var fehler = Fehler(await konten.RemoveFromRolesAsync(konto, await konten.GetRolesAsync(konto)));
+            fehler ??= Fehler(await konten.AddToRoleAsync(konto, rolle));
+            // Neuer Stempel: offene Sitzungen holen sich die neue Rolle bei der nächsten Prüfung.
+            return fehler ?? Fehler(await konten.UpdateSecurityStampAsync(konto));
+        });
+    }
+
+    private async Task Zuruecksetzen(Eintrag k)
+    {
+        var passwort = Startpasswort.Erzeugen();
+        await Ausfuehren($"Neues Startpasswort für {k.Anzeigename} vergeben.", async konten =>
+        {
+            var konto = await konten.FindByIdAsync(k.Id) ?? throw new InvalidOperationException("Konto nicht gefunden.");
+            var fehler = Fehler(await konten.RemovePasswordAsync(konto));
+            fehler ??= Fehler(await konten.AddPasswordAsync(konto, passwort));
+            if (fehler is not null) return fehler;
+            konto.MussPasswortAendern = true;
+            await konten.SetLockoutEndDateAsync(konto, null);
+            await konten.ResetAccessFailedCountAsync(konto);
+            return Fehler(await konten.UpdateAsync(konto));
+        });
+        if (!_fehler) _startpasswort = (k.Benutzername, passwort);
+    }
+
+    private async Task Sperren(Eintrag k)
+    {
+        if (LetzteVerwaltung(k))
+        {
+            _meldung = "Das letzte aktive Konto mit Verwaltung kann nicht gesperrt werden.";
+            _fehler = true;
+            return;
+        }
+
+        await Ausfuehren($"{k.Anzeigename} ist gesperrt.", async konten =>
+        {
+            var konto = await konten.FindByIdAsync(k.Id) ?? throw new InvalidOperationException("Konto nicht gefunden.");
+            var fehler = Fehler(await konten.SetLockoutEnabledAsync(konto, true));
+            fehler ??= Fehler(await konten.SetLockoutEndDateAsync(konto, DateTimeOffset.MaxValue));
+            return fehler ?? Fehler(await konten.UpdateSecurityStampAsync(konto));
+        });
+    }
+
+    private async Task Entsperren(Eintrag k) =>
+        await Ausfuehren($"{k.Anzeigename} ist wieder freigegeben.", async konten =>
+        {
+            var konto = await konten.FindByIdAsync(k.Id) ?? throw new InvalidOperationException("Konto nicht gefunden.");
+            var fehler = Fehler(await konten.SetLockoutEndDateAsync(konto, null));
+            return fehler ?? Fehler(await konten.ResetAccessFailedCountAsync(konto));
+        });
+}

@@ -10,13 +10,21 @@
     <link rel="stylesheet" href="@Assets["Hundekurs.Web.styles.css"]" />
     <ImportMap />
     <title>Hundekurs</title>
-    <HeadOutlet @rendermode="InteractiveServer" />
+    <HeadOutlet @rendermode="Seitenmodus" />
 </head>
 
 <body>
-    <Routes @rendermode="InteractiveServer" />
+    <Routes @rendermode="Seitenmodus" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 
 </html>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    // Anmelden und Passwort ändern laufen als normale Formularseiten (Cookie setzen geht nur in einer HTTP-Antwort),
+    // alle anderen Seiten interaktiv über die Blazor-Verbindung.
+    private IComponentRenderMode? Seitenmodus => HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
+}
