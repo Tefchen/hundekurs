@@ -87,6 +87,36 @@ public sealed partial class Kursspeicher
         tx.Commit();
     }
 
+    /// <summary>
+    /// Ersetzt die Termine der Apportierarbeit (z. B. weil Teil 2 später beginnt) und setzt das Kursende neu.
+    /// Teil 1 bleibt unberührt. Abgelehnt, sobald für die Apportierarbeit schon etwas erfasst ist.
+    /// </summary>
+    public void ApportiertermineVerschieben(int kursId, IReadOnlyList<DateOnly> neu, DateOnly kursende)
+    {
+        using var db = fabrik.CreateDbContext();
+        using var tx = db.Database.BeginTransaction();
+        var kurs = db.Kurse.Single(k => k.Id == kursId);
+
+        var alte = db.Termine
+            .Where(t => t.KursId == kursId && t.Art == Terminart.Apportierarbeit)
+            .Select(t => new { t.Id, t.Status }).ToList();
+        var ids = alte.Select(t => t.Id).ToList();
+        if (alte.Any(t => t.Status == Terminstatus.Durchgefuehrt)
+            || db.Anwesenheiten.Any(a => ids.Contains(a.TerminId))
+            || db.Einsaetze.Any(e => e.TerminId != null && ids.Contains(e.TerminId.Value)))
+            throw new InvalidOperationException("Für die Apportierarbeit sind schon Anwesenheiten oder Ausbildereinsätze erfasst – die Termine lassen sich nicht mehr verschieben.");
+
+        db.Termine.Where(t => ids.Contains(t.Id)).ExecuteDelete();
+        db.Termine.AddRange(neu.Select(d => new Termin
+        {
+            KursId = kursId, Datum = d, Art = Terminart.Apportierarbeit, Status = Terminstatus.Geplant,
+            UebungsgelaendeId = kurs.ApportierGelaendeId, UhrzeitUebrigeFaecher = new TimeOnly(17, 30),
+        }));
+        kurs.Ende = kursende;
+        db.SaveChanges();
+        tx.Commit();
+    }
+
     // ---------- Gehorsam und Apportierarbeit ----------
 
     public List<NebenterminDaten> Nebentermine(int kursId, Terminart art)

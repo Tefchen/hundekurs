@@ -217,6 +217,36 @@ public sealed class KursspeicherTests : IDisposable
     }
 
     [Fact]
+    public void Apportierarbeit_verschieben_laesst_Teil1_in_Ruhe()
+    {
+        var kursId = _speicher.KursSicherstellen(demodaten: true);
+        _speicher.NebentermineAnlegen(kursId, Kurskalender.Erzeugen(2027));
+        var gehorsamVorher = _speicher.Nebentermine(kursId, Terminart.Gehorsam).Select(t => t.Id).ToList();
+
+        var (training, apport) = Kurskalender.Teil2(new DateOnly(2027, 6, 13));
+        _speicher.ApportiertermineVerschieben(kursId, apport, training[^1]);
+
+        Assert.Equal(gehorsamVorher, _speicher.Nebentermine(kursId, Terminart.Gehorsam).Select(t => t.Id).ToList());
+        var neu = _speicher.Nebentermine(kursId, Terminart.Apportierarbeit);
+        Assert.Equal(12, neu.Count);
+        Assert.Equal(new DateOnly(2027, 6, 9), neu[0].Datum);
+    }
+
+    [Fact]
+    public void Apportierarbeit_mit_Anwesenheit_laesst_sich_nicht_verschieben()
+    {
+        var kursId = _speicher.KursSicherstellen(demodaten: true);
+        _speicher.NebentermineAnlegen(kursId, Kurskalender.Erzeugen(2027));
+        var erster = _speicher.Nebentermine(kursId, Terminart.Apportierarbeit)[0];
+        var teilnehmer = _speicher.TeilnehmerListe(kursId).Select(t => t.KursteilnahmeId!.Value).Take(1).ToList();
+        _speicher.AnwesenheitSpeichern(erster.Id, teilnehmer, teilnehmer.ToHashSet(), null);
+
+        var (training, apport) = Kurskalender.Teil2(new DateOnly(2027, 6, 13));
+        Assert.Throws<InvalidOperationException>(() => _speicher.ApportiertermineVerschieben(kursId, apport, training[^1]));
+        Assert.Equal(erster.Datum, _speicher.Nebentermine(kursId, Terminart.Apportierarbeit)[0].Datum);
+    }
+
+    [Fact]
     public void Anwesenheit_und_Absage_ergeben_die_richtigen_Zahlen()
     {
         var kursId = _speicher.KursSicherstellen(demodaten: true);

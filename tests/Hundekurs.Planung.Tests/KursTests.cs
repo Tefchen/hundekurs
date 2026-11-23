@@ -47,6 +47,30 @@ public class KurskalenderTests
             Assert.True(k.Apportierarbeit[0] > k.Gehorsam[^1]);
         }
     }
+
+    [Fact]
+    public void Teil2_kann_spaeter_beginnen_Apportieren_folgt_mit()
+    {
+        // 2027: Teil 1 endet am 23.05., üblicher Beginn wäre der 30.05.
+        Assert.Equal(new DateOnly(2027, 5, 30), Kurskalender.StandardBeginnTeil2(2027));
+        var k = Kurskalender.Erzeugen(2027, beginnTeil2: new DateOnly(2027, 6, 13));
+
+        Assert.Equal(11, k.Gehorsam.Count);
+        Assert.Equal(new DateOnly(2027, 6, 13), k.Training[0]);
+        Assert.Equal(12, k.Training.Count);
+        Assert.Equal(new DateOnly(2027, 6, 9), k.Apportierarbeit[0]);
+        Assert.All(k.Apportierarbeit, d => Assert.Equal(DayOfWeek.Wednesday, d.DayOfWeek));
+    }
+
+    [Fact]
+    public void Beginn_Teil2_muss_ein_Sonntag_nach_Teil1_sein()
+    {
+        var letzterGehorsam = new DateOnly(2027, 5, 23);
+        Assert.Null(Kurskalender.BeginnTeil2Pruefen(new DateOnly(2027, 5, 30), letzterGehorsam));
+        Assert.Contains("Sonntag", Kurskalender.BeginnTeil2Pruefen(new DateOnly(2027, 6, 1), letzterGehorsam));
+        Assert.Contains("nach dem letzten", Kurskalender.BeginnTeil2Pruefen(new DateOnly(2027, 5, 23), letzterGehorsam));
+        Assert.Throws<ArgumentException>(() => Kurskalender.Erzeugen(2027, beginnTeil2: new DateOnly(2027, 5, 16)));
+    }
 }
 
 public class ZulassungTests

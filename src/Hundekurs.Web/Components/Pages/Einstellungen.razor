@@ -10,12 +10,18 @@
 <section class="formular">
     <h2>Kursjahr anlegen</h2>
     <p>
-        Erzeugt alle Termine: Teil 1 ab dem 1. Märzsonntag über 12 Wochen ohne Ostersonntag, Teil 2 direkt im Anschluss
-        über 12 Wochen (samstags Vorbereitung, sonntags Training) und die Nachsuche auf Niederwild an 12 Mittwochen.
+        Erzeugt alle Termine: Teil 1 ab dem 1. Märzsonntag über 12 Wochen ohne Ostersonntag, Teil 2 über 12 Wochen
+        (samstags Vorbereitung, sonntags Training) und die Nachsuche auf Niederwild an 12 Mittwochen ab dem Mittwoch vor dem ersten Schweißsonntag.
+        Teil 2 beginnt normalerweise direkt im Anschluss an Teil 1, ein späterer Sonntag ist möglich.
     </p>
     <div class="felder">
-        <label>Jahr <input type="number" min="2020" max="2100" @bind="_jahr" @bind:after="Vorschau" /></label>
+        <label>Jahr <input type="number" min="2020" max="2100" @bind="_jahr" @bind:after="JahrGeaendert" /></label>
+        <label>Erster Schweißsonntag <input type="date" @bind="_beginnTeil2" @bind:after="Vorschau" /></label>
     </div>
+    @if (_kalenderFehler is not null)
+    {
+        <p class="befund rot">@_kalenderFehler</p>
+    }
     @if (_kalender is not null)
     {
         <ul>
@@ -28,16 +34,48 @@
         Achtung: Das ersetzt alle Termine des Kurses – samt Schweißplan, Anwesenheiten und Ausbildereinsätzen.
         Einzelne Termine lassen sich danach absagen.
     </p>
-    @if (_bestaetigen)
+    @if (_bestaetigen && _kalender is not null)
     {
         <button class="gefahr" @onclick="KursjahrAnlegen">Ja, Kursjahr @_jahr neu anlegen</button>
         <button @onclick="() => _bestaetigen = false">Abbrechen</button>
     }
     else
     {
-        <button @onclick="() => _bestaetigen = true">Kursjahr @_jahr anlegen …</button>
+        <button disabled="@(_kalender is null)" @onclick="() => _bestaetigen = true">Kursjahr @_jahr anlegen …</button>
     }
 </section>
+
+@if (Zustand.BeginnTeil2 is { } bisher)
+{
+    <section class="formular">
+        <h2>Schweißarbeit und Niederwild verschieben</h2>
+        <p>
+            Teil 2 beginnt derzeit am <b>@bisher.ToString("dd.MM.yyyy")</b>. Beim Verschieben bleiben Teil 1 und seine Anwesenheiten erhalten;
+            die 12 Schweißsonntage und die Mittwoche der Nachsuche auf Niederwild werden ab dem neuen Datum neu angelegt.
+            Das geht nur, solange in Teil 2 und bei der Apportierarbeit noch nichts durchgeführt oder erfasst ist.
+        </p>
+        <div class="felder">
+            <label>Neuer erster Schweißsonntag <input type="date" @bind="_verschiebenAuf" /></label>
+        </div>
+        @if (_verschiebenAuf is { } neu && neu != bisher)
+        {
+            <p>Neu: Schweißarbeit ab @neu.ToString("dd.MM.yyyy"), Nachsuche auf Niederwild ab @neu.AddDays(-4).ToString("dd.MM.yyyy").</p>
+            <p class="befund gelb">
+                Der Schweißplan wird dabei vollständig neu berechnet. Von Hand festgelegte Reviere, Tausche, Abmeldungen
+                und bereits veröffentlichte Pläne gehen verloren.
+            </p>
+            @if (_verschiebenBestaetigen)
+            {
+                <button class="gefahr" @onclick="Teil2Verschieben">Ja, Teil 2 auf den @neu.ToString("dd.MM.") verschieben</button>
+                <button @onclick="() => _verschiebenBestaetigen = false">Abbrechen</button>
+            }
+            else
+            {
+                <button @onclick="() => _verschiebenBestaetigen = true">Verschieben …</button>
+            }
+        }
+    </section>
+}
 
 <section class="formular">
     <h2>Kurs</h2>
@@ -191,7 +229,11 @@
     }
 
     private int _jahr;
+    private DateOnly? _beginnTeil2;
     private Kurstermine? _kalender;
+    private string? _kalenderFehler;
+    private DateOnly? _verschiebenAuf;
+    private bool _verschiebenBestaetigen;
     private bool _bestaetigen;
     private string _bezeichnung = "";
     private decimal _kmSatz;
@@ -204,7 +246,8 @@
     protected override void OnInitialized()
     {
         _jahr = Zustand.Kurs.Jahr ?? DateTime.Today.Year + (DateTime.Today.Month >= 6 ? 1 : 0);
-        Vorschau();
+        JahrGeaendert();
+        _verschiebenAuf = Zustand.BeginnTeil2;
         Uebernehmen();
         Zustand.Geaendert += Aktualisieren;
     }
@@ -235,14 +278,43 @@
         if (an) menge.Add(id); else menge.Remove(id);
     }
 
-    private void Vorschau() => _kalender = _jahr is >= 2000 and <= 2100 ? Kurskalender.Erzeugen(_jahr) : null;
+    private void JahrGeaendert()
+    {
+        // Neues Jahr: Vorschlag „direkt im Anschluss an Teil 1“.
+        _beginnTeil2 = _jahr is >= 2000 and <= 2100 ? Kurskalender.StandardBeginnTeil2(_jahr) : null;
+        Vorschau();
+    }
+
+    private void Vorschau()
+    {
+        _kalender = null;
+        _kalenderFehler = null;
+        if (_jahr is < 2000 or > 2100) return;
+        try
+        {
+            _kalender = Kurskalender.Erzeugen(_jahr, beginnTeil2: _beginnTeil2);
+        }
+        catch (ArgumentException ex)
+        {
+            _kalenderFehler = ex.Message.Split(" (Parameter")[0];
+        }
+    }
 
     private void KursjahrAnlegen() => Ausfuehren(() =>
     {
-        Zustand.KursjahrAnlegen(_jahr);
+        Zustand.KursjahrAnlegen(_jahr, _beginnTeil2);
         _bestaetigen = false;
+        _verschiebenAuf = Zustand.BeginnTeil2;
         Uebernehmen();
         return $"Kursjahr {_jahr} angelegt.";
+    });
+
+    private void Teil2Verschieben() => Ausfuehren(() =>
+    {
+        var neu = _verschiebenAuf ?? throw new InvalidOperationException("Bitte ein Datum wählen.");
+        Zustand.Teil2Verschieben(neu);
+        _verschiebenBestaetigen = false;
+        return $"Teil 2 beginnt jetzt am {neu:dd.MM.yyyy}, die Nachsuche auf Niederwild am {neu.AddDays(-4):dd.MM.yyyy}.";
     });
 
     private void KursSpeichern() => Ausfuehren(() =>

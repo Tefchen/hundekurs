@@ -20,9 +20,9 @@ public sealed partial class PlanungsZustand
     // ---------- Kursjahr und Einstellungen ----------
 
     /// <summary>Legt alle Termine eines Kursjahres neu an: Teil 1, Teil 2 (mit Schweißplanung) und Apportierarbeit.</summary>
-    public void KursjahrAnlegen(int jahr)
+    public void KursjahrAnlegen(int jahr, DateOnly? beginnTeil2 = null)
     {
-        var kalender = Kurskalender.Erzeugen(jahr);
+        var kalender = Kurskalender.Erzeugen(jahr, beginnTeil2: beginnTeil2);
         lock (_sperre)
         {
             _speicher.NebentermineAnlegen(_kursId, kalender);
@@ -32,6 +32,46 @@ public sealed partial class PlanungsZustand
         _speicher.Protokollieren(_kursId,
             $"Kursjahr {jahr} angelegt: Teil 1 ab {kalender.Gehorsam[0]:dd.MM.} ({kalender.Gehorsam.Count} Sonntage, ohne Ostersonntag {kalender.Ostersonntag:dd.MM.}), " +
             $"Teil 2 ab {kalender.Training[0]:dd.MM.}, Apportierarbeit ab {kalender.Apportierarbeit[0]:dd.MM.}", []);
+        lock (_sperre) Neuladen();
+        Geaendert?.Invoke();
+    }
+
+    /// <summary>Erster Schweißsonntag des laufenden Kursjahres, falls Termine angelegt sind.</summary>
+    public DateOnly? BeginnTeil2 => Plan.Termine.Count == 0 ? null : Plan.Termine.Min(t => t.Datum);
+
+    /// <summary>
+    /// Verschiebt Teil 2 (Schweißarbeit) und die Apportierarbeit auf einen neuen ersten Schweißsonntag.
+    /// Teil 1 mit seinen Anwesenheiten bleibt erhalten. Der Schweißplan wird neu berechnet,
+    /// von Hand gesetzte Reviere, Tausche und Abmeldungen gehen dabei verloren.
+    /// </summary>
+    public void Teil2Verschieben(DateOnly beginn)
+    {
+        var bisher = BeginnTeil2;
+        int anzahlTraining, anzahlApport;
+        IReadOnlyList<DateOnly> training;
+        lock (_sperre)
+        {
+            if (Plan.Termine.Any(t => t.Status == TerminStatus.Durchgefuehrt))
+                throw new InvalidOperationException("Im Schweißplan sind schon Termine durchgeführt – Teil 2 lässt sich nicht mehr verschieben.");
+
+            var gehorsam = Nebentermine(Terminart.Gehorsam);
+            if (gehorsam.Count == 0)
+                throw new InvalidOperationException("Es ist noch kein Kursjahr angelegt.");
+            if (Kurskalender.BeginnTeil2Pruefen(beginn, gehorsam.Max(t => t.Datum)) is { } fehler)
+                throw new InvalidOperationException(fehler);
+
+            anzahlTraining = Plan.Termine.Count > 0 ? Plan.Termine.Count : 12;
+            var apport = Nebentermine(Terminart.Apportierarbeit);
+            anzahlApport = apport.Count > 0 ? apport.Count : 12;
+
+            var neu = Kurskalender.Teil2(beginn, anzahlTraining, anzahlApport);
+            training = neu.Training;
+            _speicher.ApportiertermineVerschieben(_kursId, neu.Apportierarbeit, training[^1]);
+            Neuladen();
+        }
+        SaisonErzeugen(training[0], anzahlTraining);
+        _speicher.Protokollieren(_kursId,
+            $"Teil 2 verschoben: Schweißarbeit ab {training[0]:dd.MM.yyyy} (bisher {bisher?.ToString("dd.MM.yyyy") ?? "–"}), Apportierarbeit ab {training[0].AddDays(-4):dd.MM.yyyy}", []);
         lock (_sperre) Neuladen();
         Geaendert?.Invoke();
     }
