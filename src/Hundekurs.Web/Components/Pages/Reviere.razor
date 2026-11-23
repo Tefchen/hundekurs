@@ -1,0 +1,210 @@
+@page "/reviere"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+
+<PageTitle>Reviere</PageTitle>
+
+<h1>Reviere</h1>
+
+<p>
+    Änderungen wirken sofort: Der Plan wird ab heute angepasst. Durchgeführte und veröffentlichte Termine behalten ihr Revier.
+    Nicht mehr nutzbare Reviere bitte auf „inaktiv“ setzen statt löschen, damit die Historie erhalten bleibt.
+</p>
+
+<table class="liste">
+    <thead>
+        <tr>
+            <th>Revier</th><th>Kürzel</th><th>Verwendung</th><th>Status</th><th>Fährten</th>
+            <th>Ruhezeit min./Ziel</th><th>Parallel</th><th>Gesperrt</th><th>Treffpunkt (Koordinaten)</th><th class="keindruck"></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var r in Zustand.Reviere)
+        {
+            <tr class="@(r.Aktiv ? "" : "inaktiv")">
+                <td>@r.Name</td>
+                <td>@r.Kuerzel</td>
+                <td>@Text(r.Verwendung)</td>
+                <td>@(r.Aktiv ? "aktiv" : "inaktiv")</td>
+                <td>@r.AnzahlFaehrten</td>
+                <td>@r.MinRuhetage / @r.ZielRuhetage Tage</td>
+                <td>@PaareText(r.EffektivePaare)@(r.Paare is null ? " (Standard)" : "")</td>
+                <td>@(r.GesperrteFaehrten.Count == 0 ? "–" : string.Join(", ", r.GesperrteFaehrten.Order()))</td>
+                <td>@(_koordinaten.GetValueOrDefault(r.Id)?.ToString() ?? "fehlen")</td>
+                <td class="keindruck"><button @onclick="() => Bearbeiten(r)">Bearbeiten</button></td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<div class="werkzeuge keindruck">
+    <button @onclick="Neu">Neues Revier</button>
+</div>
+
+@if (_form is not null)
+{
+    <section class="formular keindruck">
+        <h2>@(_form.Id is null ? "Neues Revier" : $"Revier {_form.Name} bearbeiten")</h2>
+        <div class="felder">
+            <label>Name <input @bind="_form.Name" /></label>
+            <label>Kürzel <input @bind="_form.Kuerzel" maxlength="5" size="5" /></label>
+            <label>
+                Verwendung
+                <select @bind="_form.Verwendung">
+                    <option value="@Verwendung.Training">Training</option>
+                    <option value="@Verwendung.Pruefung">Prüfung</option>
+                    <option value="@Verwendung.Beides">Training und Prüfung</option>
+                </select>
+            </label>
+            <label><input type="checkbox" @bind="_form.Aktiv" /> aktiv</label>
+            <label>Anzahl Fährten <input type="number" min="1" max="20" @bind="_form.AnzahlFaehrten" /></label>
+            <label>Mindest-Ruhezeit (Tage) <input type="number" min="0" @bind="_form.MinRuhetage" /></label>
+            <label>Angestrebte Ruhezeit (Tage) <input type="number" min="0" @bind="_form.ZielRuhetage" /></label>
+            <label>Parallele Fährten <input @bind="_form.PaareText" placeholder="leer = Standard, z. B. 1+4, 2+5, 3+6" size="30" /></label>
+            <label>Treffpunkt (Breite, Länge) <input @bind="_form.Koordinaten" placeholder="z. B. 50.1234, 8.5678" /></label>
+        </div>
+        <div>
+            Gesperrt (z. B. noch nicht aufgefrischt):
+            @foreach (var nr in Enumerable.Range(1, Math.Clamp(_form.AnzahlFaehrten, 1, 20)))
+            {
+                <label class="faehrte @(_form.Gesperrt.Contains(nr) ? "gesperrt" : "")">
+                    <input type="checkbox" checked="@_form.Gesperrt.Contains(nr)" @onchange="e => Sperren(nr, (bool)e.Value!)" />@nr
+                </label>
+            }
+        </div>
+        <div class="werkzeuge">
+            <button class="primaer" @onclick="Speichern">Speichern</button>
+            <button @onclick="() => { _form = null; _meldung = null; }">Abbrechen</button>
+        </div>
+        @if (_meldung is not null)
+        {
+            <p class="befund rot">@_meldung</p>
+        }
+    </section>
+}
+
+@code {
+    private sealed class Formular
+    {
+        public int? Id { get; init; }
+        public string Name { get; set; } = "";
+        public string Kuerzel { get; set; } = "";
+        public Verwendung Verwendung { get; set; } = Verwendung.Training;
+        public bool Aktiv { get; set; } = true;
+        public int AnzahlFaehrten { get; set; } = 6;
+        public int MinRuhetage { get; set; } = 14;
+        public int ZielRuhetage { get; set; } = 21;
+        public string PaareText { get; set; } = "";
+        public HashSet<int> Gesperrt { get; set; } = [];
+        public string? Koordinaten { get; set; }
+    }
+
+    private Dictionary<int, Koordinate?> _koordinaten = [];
+
+    private Formular? _form;
+    private string? _meldung;
+
+    private void Neu()
+    {
+        _form = new Formular();
+        _meldung = null;
+    }
+
+    private void Bearbeiten(Revier r)
+    {
+        _form = new Formular
+        {
+            Id = r.Id,
+            Name = r.Name,
+            Kuerzel = r.Kuerzel,
+            Verwendung = r.Verwendung,
+            Aktiv = r.Aktiv,
+            AnzahlFaehrten = r.AnzahlFaehrten,
+            MinRuhetage = r.MinRuhetage,
+            ZielRuhetage = r.ZielRuhetage,
+            PaareText = r.Paare is null ? "" : PaareText(r.Paare),
+            Gesperrt = r.GesperrteFaehrten.ToHashSet(),
+            Koordinaten = _koordinaten.GetValueOrDefault(r.Id)?.ToString(),
+        };
+        _meldung = null;
+    }
+
+    private void Sperren(int nr, bool gesperrt)
+    {
+        if (gesperrt) _form!.Gesperrt.Add(nr); else _form!.Gesperrt.Remove(nr);
+    }
+
+    private void Speichern()
+    {
+        if (_form is null) return;
+        if (!PaareLesen(_form.PaareText, _form.AnzahlFaehrten, out var paare, out var fehler))
+        {
+            _meldung = fehler;
+            return;
+        }
+        Koordinate? k = null;
+        if (!string.IsNullOrWhiteSpace(_form.Koordinaten) && !Koordinate.TryParse(_form.Koordinaten, out k))
+        {
+            _meldung = "Die Koordinaten bitte als „Breite, Länge“ angeben, z. B. 50.1234, 8.5678.";
+            return;
+        }
+        try
+        {
+            Zustand.RevierSpeichern(new RevierDaten(_form.Id, _form.Name, _form.Kuerzel, _form.Verwendung, _form.Aktiv,
+                _form.AnzahlFaehrten, _form.MinRuhetage, _form.ZielRuhetage, paare,
+                _form.Gesperrt.Where(n => n <= _form.AnzahlFaehrten).ToHashSet(), k?.Breite, k?.Laenge));
+            _koordinaten = Zustand.RevierKoordinaten();
+            _form = null;
+            _meldung = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _meldung = ex.Message;
+        }
+    }
+
+    private static bool PaareLesen(string text, int anzahl, out List<Sequenzpaar>? paare, out string? fehler)
+    {
+        paare = null;
+        fehler = null;
+        if (string.IsNullOrWhiteSpace(text)) return true;
+
+        var liste = new List<Sequenzpaar>();
+        foreach (var teil in text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var zahlen = teil.Split('+', StringSplitOptions.TrimEntries);
+            if (zahlen.Length != 2 || !int.TryParse(zahlen[0], out var a) || !int.TryParse(zahlen[1], out var b)
+                || a < 1 || b < 1 || a > anzahl || b > anzahl || a == b)
+            {
+                fehler = $"„{teil}“ ist kein gültiges Paar (Format 1+4, Fährten 1 bis {anzahl}).";
+                return false;
+            }
+            liste.Add(new Sequenzpaar(a, b));
+        }
+        var alle = liste.SelectMany(p => new[] { p.Erste, p.Zweite }).ToList();
+        if (alle.Count != alle.Distinct().Count())
+        {
+            fehler = "Jede Fährte darf nur in einem Paar vorkommen.";
+            return false;
+        }
+        paare = liste;
+        return true;
+    }
+
+    private static string PaareText(IEnumerable<Sequenzpaar> paare) => string.Join(", ", paare.Select(p => $"{p.Erste}+{p.Zweite}"));
+
+    private static string Text(Verwendung v) => v switch
+    {
+        Verwendung.Training => "Training",
+        Verwendung.Pruefung => "Prüfung",
+        _ => "Training und Prüfung",
+    };
+
+    protected override void OnInitialized()
+    {
+        _koordinaten = Zustand.RevierKoordinaten();
+        Zustand.Geaendert += Aktualisieren;
+    }
+    private void Aktualisieren() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

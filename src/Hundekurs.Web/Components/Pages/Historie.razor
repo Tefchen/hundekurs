@@ -1,0 +1,26 @@
+@page "/historie"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+
+<PageTitle>Historie</PageTitle>
+
+<h1>Historie</h1>
+
+<p>Alle Änderungen mit ihren Auswirkungen auf den Plan, neueste zuerst (die letzten 200).</p>
+
+@foreach (var e in Zustand.Historie)
+{
+    <details class="protokoll">
+        <summary>@e.Zeitpunkt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · @e.Benutzer · @e.Aktion @(e.Auswirkungen.Count > 0 ? $"({e.Auswirkungen.Count} Änderungen)" : "")</summary>
+        @if (e.Auswirkungen.Count > 0)
+        {
+            <ul>@foreach (var a in e.Auswirkungen) {<li>@a</li>}</ul>
+        }
+    </details>
+}
+
+@code {
+    protected override void OnInitialized() => Zustand.Geaendert += Aktualisieren;
+    private void Aktualisieren() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

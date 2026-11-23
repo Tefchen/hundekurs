@@ -1,0 +1,299 @@
+@page "/einstellungen"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+
+<PageTitle>Einstellungen</PageTitle>
+
+<h1>Einstellungen</h1>
+
+<section class="formular">
+    <h2>Kursjahr anlegen</h2>
+    <p>
+        Erzeugt alle Termine: Teil 1 ab dem 1. Märzsonntag über 12 Wochen ohne Ostersonntag, Teil 2 direkt im Anschluss
+        über 12 Wochen (samstags Vorbereitung, sonntags Training) und die Nachsuche auf Niederwild an 12 Mittwochen.
+    </p>
+    <div class="felder">
+        <label>Jahr <input type="number" min="2020" max="2100" @bind="_jahr" @bind:after="Vorschau" /></label>
+    </div>
+    @if (_kalender is not null)
+    {
+        <ul>
+            <li>Teil 1 (Gehorsam): @_kalender.Gehorsam[0].ToString("dd.MM.") bis @_kalender.Gehorsam[^1].ToString("dd.MM.yyyy"), @_kalender.Gehorsam.Count Sonntage (Ostersonntag @_kalender.Ostersonntag.ToString("dd.MM.") entfällt)</li>
+            <li>Teil 2 (jagdlich): @_kalender.Training[0].ToString("dd.MM.") bis @_kalender.Training[^1].ToString("dd.MM.yyyy"), @_kalender.Training.Count Wochenenden</li>
+            <li>Nachsuche auf Niederwild: @_kalender.Apportierarbeit[0].ToString("dd.MM.") bis @_kalender.Apportierarbeit[^1].ToString("dd.MM.yyyy"), @_kalender.Apportierarbeit.Count Mittwoche ab 17:30</li>
+        </ul>
+    }
+    <p class="befund gelb">
+        Achtung: Das ersetzt alle Termine des Kurses – samt Schweißplan, Anwesenheiten und Ausbildereinsätzen.
+        Einzelne Termine lassen sich danach absagen.
+    </p>
+    @if (_bestaetigen)
+    {
+        <button class="gefahr" @onclick="KursjahrAnlegen">Ja, Kursjahr @_jahr neu anlegen</button>
+        <button @onclick="() => _bestaetigen = false">Abbrechen</button>
+    }
+    else
+    {
+        <button @onclick="() => _bestaetigen = true">Kursjahr @_jahr anlegen …</button>
+    }
+</section>
+
+<section class="formular">
+    <h2>Kurs</h2>
+    <div class="felder">
+        <label>Bezeichnung <input @bind="_bezeichnung" /></label>
+        <label>km-Satz (€ je km, Hin- und Rückweg) <input type="number" step="0.01" min="0" @bind="_kmSatz" /></label>
+        <label>
+            Ort für Teil 1 (Gehorsam)
+            <select @bind="_gehorsamOrt">
+                <option value="0">– bitte wählen –</option>
+                @foreach (var g in Zustand.Gelaende.Where(g => g.Aktiv))
+                {
+                    <option value="@g.Id">@g.Bezeichnung</option>
+                }
+            </select>
+        </label>
+        <label>
+            Ort für die Nachsuche auf Niederwild
+            <select @bind="_apportierOrt">
+                <option value="0">– bitte wählen –</option>
+                @foreach (var g in Zustand.Gelaende.Where(g => g.Aktiv))
+                {
+                    <option value="@g.Id">@g.Bezeichnung</option>
+                }
+            </select>
+        </label>
+    </div>
+    <button class="primaer" @onclick="KursSpeichern">Speichern</button>
+</section>
+
+<section class="formular">
+    <h2>Orte</h2>
+    <p>Gehorsamsplatz, Gelände für Niederwild, Schussfestigkeit und andere Übungsorte. Ein Ort kann für mehrere Fächer genutzt werden. Die Koordinaten sind das Ziel der km-Berechnung.</p>
+    <table class="liste">
+        <thead><tr><th>Bezeichnung</th><th>Fächer</th><th>Im Revier</th><th>Koordinaten</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var g in Zustand.Gelaende)
+            {
+                <tr class="@(g.Aktiv ? "" : "inaktiv")">
+                    <td>@g.Bezeichnung</td>
+                    <td>@Zustand.FaecherText(g.FachIds)</td>
+                    <td>@(Zustand.Revier(g.RevierId)?.Name ?? "–")</td>
+                    <td>@(g.Breite is double b && g.Laenge is double l ? new Koordinate(b, l).ToString() : "fehlen")</td>
+                    <td>@(g.Aktiv ? "aktiv" : "inaktiv")</td>
+                    <td><button @onclick="() => OrtBearbeiten(g)">Bearbeiten</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <div class="werkzeuge"><button @onclick="OrtNeu">Neuer Ort</button></div>
+
+    @if (_ort is not null)
+    {
+        <div class="felder">
+            <label>Bezeichnung <input @bind="_ort.Bezeichnung" /></label>
+            <label>
+                Im Revier
+                <select @bind="_ort.RevierId">
+                    <option value="0">– keins –</option>
+                    @foreach (var r in Zustand.Reviere)
+                    {
+                        <option value="@r.Id">@r.Name</option>
+                    }
+                </select>
+            </label>
+            <label>Treffpunkt <input @bind="_ort.Treffpunkt" /></label>
+            <label>Koordinaten (Breite, Länge) <input @bind="_ort.Koordinaten" placeholder="z. B. 50.1234, 8.5678" /></label>
+            <label><input type="checkbox" @bind="_ort.Aktiv" /> aktiv</label>
+        </div>
+        <div class="reihe">
+            <strong>Fächer:</strong>
+            @foreach (var f in Zustand.Faecher.Where(f => f.Aktiv || _ort.FachIds.Contains(f.Id!.Value)))
+            {
+                var id = f.Id!.Value;
+                <label><input type="checkbox" checked="@_ort.FachIds.Contains(id)" @onchange="e => Umschalten(_ort.FachIds, id, (bool)e.Value!)" /> @f.Bezeichnung</label>
+            }
+        </div>
+        <p class="legende">Koordinaten: in Google Maps oder OpenStreetMap mit Rechtsklick auf den Treffpunkt kopieren.</p>
+        <div class="werkzeuge">
+            <button class="primaer" @onclick="OrtSpeichern">Speichern</button>
+            <button @onclick="() => _ort = null">Abbrechen</button>
+        </div>
+    }
+</section>
+
+<section class="formular">
+    <h2>Fächer</h2>
+    <p>Ausbildungs- und Prüfungsfächer. Sie werden den Orten und der Brauchbarkeit eines Hundes zugeordnet. Stöber- oder Bauarbeit lassen sich bei Bedarf ergänzen.</p>
+    <table class="liste kompakt">
+        <thead><tr><th>Fach</th><th>Bereich</th><th>Reihenfolge</th><th>aktiv</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var f in _faecher)
+            {
+                <tr class="@(f.Aktiv ? "" : "inaktiv")">
+                    <td><input @bind="f.Bezeichnung" /></td>
+                    <td>
+                        <select @bind="f.Bereich">
+                            <option value="@Fachbereich.Grundgehorsam">Grundgehorsam</option>
+                            <option value="@Fachbereich.Nachsuche">Nachsuche</option>
+                            <option value="@Fachbereich.Sonstiges">Sonstiges</option>
+                        </select>
+                    </td>
+                    <td><input type="number" style="width:5rem" @bind="f.Reihenfolge" /></td>
+                    <td><input type="checkbox" @bind="f.Aktiv" /></td>
+                    <td><button @onclick="() => FachSpeichern(f)">Speichern</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <div class="werkzeuge"><button @onclick="FachNeu">Neues Fach</button></div>
+</section>
+
+<section class="formular">
+    <h2>Routendienst</h2>
+    @if (Zustand.RoutendienstVerfuegbar)
+    {
+        <p class="befund gruen">Eingerichtet. km werden über openrouteservice berechnet; übertragen werden nur Adressen und Koordinaten, keine Namen.</p>
+    }
+    else
+    {
+        <p class="befund gelb">Nicht eingerichtet – km lassen sich nur von Hand eintragen.</p>
+        <p>Schlüssel einmalig im Projektordner <code>src\Hundekurs.Web</code> hinterlegen (landet nicht im Repository), dann App neu starten:</p>
+        <pre>dotnet user-secrets set "Routendienst:Schluessel" "&lt;dein-schlüssel&gt;"</pre>
+    }
+</section>
+
+@if (_meldung is not null)
+{
+    <p class="befund @(_fehler ? "rot" : "gruen")">@_meldung</p>
+}
+
+@code {
+    private sealed class FachFormular
+    {
+        public int? Id { get; init; }
+        public string Bezeichnung { get; set; } = "";
+        public Fachbereich Bereich { get; set; } = Fachbereich.Sonstiges;
+        public int Reihenfolge { get; set; }
+        public bool Aktiv { get; set; } = true;
+    }
+
+    private sealed class OrtFormular
+    {
+        public int? Id { get; init; }
+        public string Bezeichnung { get; set; } = "";
+        public HashSet<int> FachIds { get; set; } = [];
+        public int RevierId { get; set; }
+        public string? Treffpunkt { get; set; }
+        public string? Koordinaten { get; set; }
+        public bool Aktiv { get; set; } = true;
+    }
+
+    private int _jahr;
+    private Kurstermine? _kalender;
+    private bool _bestaetigen;
+    private string _bezeichnung = "";
+    private decimal _kmSatz;
+    private int _gehorsamOrt, _apportierOrt;
+    private OrtFormular? _ort;
+    private List<FachFormular> _faecher = [];
+    private string? _meldung;
+    private bool _fehler;
+
+    protected override void OnInitialized()
+    {
+        _jahr = Zustand.Kurs.Jahr ?? DateTime.Today.Year + (DateTime.Today.Month >= 6 ? 1 : 0);
+        Vorschau();
+        Uebernehmen();
+        Zustand.Geaendert += Aktualisieren;
+    }
+
+    private void Uebernehmen()
+    {
+        _bezeichnung = Zustand.Kurs.Bezeichnung;
+        _kmSatz = Zustand.Kurs.KmSatz;
+        _gehorsamOrt = Zustand.Kurs.GehorsamGelaendeId ?? 0;
+        _apportierOrt = Zustand.Kurs.ApportierGelaendeId ?? 0;
+        _faecher = Zustand.Faecher.Select(f => new FachFormular
+        {
+            Id = f.Id, Bezeichnung = f.Bezeichnung, Bereich = f.Bereich, Reihenfolge = f.Reihenfolge, Aktiv = f.Aktiv,
+        }).ToList();
+    }
+
+    private void FachNeu() => _faecher.Add(new FachFormular());
+
+    private void FachSpeichern(FachFormular f) => Ausfuehren(() =>
+    {
+        Zustand.FachSpeichern(new FachDaten(f.Id, f.Bezeichnung, f.Bereich, f.Reihenfolge, f.Aktiv));
+        Uebernehmen();
+        return $"Fach „{f.Bezeichnung}“ gespeichert.";
+    });
+
+    private static void Umschalten(HashSet<int> menge, int id, bool an)
+    {
+        if (an) menge.Add(id); else menge.Remove(id);
+    }
+
+    private void Vorschau() => _kalender = _jahr is >= 2000 and <= 2100 ? Kurskalender.Erzeugen(_jahr) : null;
+
+    private void KursjahrAnlegen() => Ausfuehren(() =>
+    {
+        Zustand.KursjahrAnlegen(_jahr);
+        _bestaetigen = false;
+        Uebernehmen();
+        return $"Kursjahr {_jahr} angelegt.";
+    });
+
+    private void KursSpeichern() => Ausfuehren(() =>
+    {
+        Zustand.KursEinstellungenSpeichern(Zustand.Kurs with
+        {
+            Bezeichnung = _bezeichnung,
+            KmSatz = _kmSatz,
+            GehorsamGelaendeId = _gehorsamOrt == 0 ? null : _gehorsamOrt,
+            ApportierGelaendeId = _apportierOrt == 0 ? null : _apportierOrt,
+        });
+        return "Gespeichert.";
+    });
+
+    private void OrtNeu() => _ort = new OrtFormular();
+
+    private void OrtBearbeiten(GelaendeDaten g) => _ort = new OrtFormular
+    {
+        Id = g.Id,
+        Bezeichnung = g.Bezeichnung,
+        FachIds = g.FachIds.ToHashSet(),
+        RevierId = g.RevierId ?? 0,
+        Treffpunkt = g.Treffpunkt,
+        Koordinaten = g.Breite is double b && g.Laenge is double l ? new Koordinate(b, l).ToString() : null,
+        Aktiv = g.Aktiv,
+    };
+
+    private void OrtSpeichern() => Ausfuehren(() =>
+    {
+        var o = _ort!;
+        Koordinate? k = null;
+        if (!string.IsNullOrWhiteSpace(o.Koordinaten) && !Koordinate.TryParse(o.Koordinaten, out k))
+            throw new InvalidOperationException("Die Koordinaten bitte als „Breite, Länge“ angeben, z. B. 50.1234, 8.5678.");
+        Zustand.GelaendeSpeichern(new GelaendeDaten(o.Id, o.Bezeichnung, o.FachIds.ToList(), o.RevierId == 0 ? null : o.RevierId, o.Treffpunkt, k?.Breite, k?.Laenge, o.Aktiv));
+        _ort = null;
+        return "Ort gespeichert.";
+    });
+
+    private void Ausfuehren(Func<string> aktion)
+    {
+        try
+        {
+            _meldung = aktion();
+            _fehler = false;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _meldung = ex.Message;
+            _fehler = true;
+        }
+    }
+
+    private void Aktualisieren() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

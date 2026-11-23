@@ -1,0 +1,188 @@
+:root {
+    --gruen: #2f6b3a;
+    --gruen-hell: #e6f1e7;
+    --rot: #b42318;
+    --rot-hell: #fdecea;
+    --gelb: #8a6100;
+    --gelb-hell: #fff6dc;
+    --grau: #6b7280;
+    --linie: #d9dde3;
+    --text: #1f2933;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+    background: #fafaf8;
+    font-size: 15px;
+}
+
+a { color: var(--gruen); }
+
+.kopf {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 0.6rem 1.5rem;
+    background: var(--gruen);
+    color: white;
+}
+.kopf .marke { color: white; font-weight: 700; text-decoration: none; font-size: 1.1rem; }
+.kopf nav { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; }
+.kopf nav a { color: #e6f1e7; text-decoration: none; padding: 0.2rem 0; border-bottom: 2px solid transparent; }
+.kopf nav a.active { color: white; border-bottom-color: white; }
+.kopf .hinweis { margin-left: auto; font-size: 0.8rem; opacity: 0.8; }
+
+main { padding: 1rem 1.5rem 3rem; max-width: 1400px; }
+
+h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
+h1:focus { outline: none; }
+h2 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
+
+button {
+    font: inherit;
+    padding: 0.3rem 0.8rem;
+    border: 1px solid var(--linie);
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--gruen); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primaer { background: var(--gruen); color: white; border-color: var(--gruen); }
+
+input, select { font: inherit; padding: 0.25rem 0.4rem; border: 1px solid var(--linie); border-radius: 4px; }
+input[type=checkbox] { padding: 0; }
+
+.werkzeuge { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0.5rem 0 1rem; }
+.werkzeuge label { display: flex; gap: 0.4rem; align-items: center; }
+.werkzeuge .trenner { flex: 0 0 1px; height: 1.5rem; background: var(--linie); margin: 0 0.4rem; }
+
+.kacheln { display: flex; gap: 1rem; flex-wrap: wrap; }
+.kachel { background: white; border: 1px solid var(--linie); border-radius: 6px; padding: 0.8rem 1.2rem; min-width: 200px; }
+.kachel .zahl { font-size: 1.6rem; font-weight: 700; }
+.kachel.rot { border-color: var(--rot); background: var(--rot-hell); }
+.kachel.gelb { border-color: var(--gelb); background: var(--gelb-hell); }
+.kachel.gruen { border-color: var(--gruen); background: var(--gruen-hell); }
+
+.tabellenrahmen { overflow-x: auto; }
+table { border-collapse: collapse; background: white; }
+th, td { border: 1px solid var(--linie); padding: 0.3rem 0.5rem; text-align: left; vertical-align: top; }
+th { background: #f1f3f5; font-weight: 600; }
+
+table.matrix th, table.matrix td { text-align: center; white-space: nowrap; min-width: 3.6rem; }
+table.matrix td.name { text-align: left; min-width: 10rem; }
+table.matrix .gruppenzeile td { text-align: left; background: #eef2ee; font-weight: 600; }
+table.matrix td.helfer { background: #eef4ff; }
+table.matrix td.ab { color: var(--grau); }
+table.matrix td.andere { background: #f7f7f7; }
+table.matrix td.ist { font-style: italic; color: var(--grau); }
+table.matrix td.gast { background: #f3eefc; }
+table.matrix .status { color: var(--grau); font-weight: normal; }
+th.rot, td.rot { background: var(--rot-hell) !important; color: var(--rot); }
+
+table.liste { min-width: 40rem; }
+table.liste tr.neueSequenz td { border-top: 2px solid #aab; }
+table.kompakt { min-width: 0; }
+
+dl.eckdaten { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; }
+dl.eckdaten dt { font-weight: 600; }
+dl.eckdaten dd { margin: 0; }
+
+.befunde { list-style: none; padding: 0; }
+.befund { padding: 0.35rem 0.6rem; border-radius: 4px; margin: 0.25rem 0; }
+.befund.rot { background: var(--rot-hell); color: var(--rot); }
+.befund.gelb { background: var(--gelb-hell); color: var(--gelb); }
+.befund.gruen { background: var(--gruen-hell); color: var(--gruen); }
+
+.aktionen fieldset { border: 1px solid var(--linie); border-radius: 6px; margin: 0.6rem 0; padding: 0.6rem 0.8rem; background: white; }
+.aktionen legend { font-weight: 600; padding: 0 0.3rem; }
+
+.vorschau {
+    position: sticky;
+    bottom: 0;
+    background: white;
+    border: 2px solid var(--gruen);
+    border-radius: 6px;
+    padding: 0.5rem 1rem 1rem;
+    margin-top: 1rem;
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.legende { color: var(--grau); font-size: 0.85rem; }
+.faehrte { margin-right: 0.5rem; white-space: nowrap; }
+.faehrte.gesperrt { color: var(--rot); }
+
+details.protokoll { background: white; border: 1px solid var(--linie); border-radius: 4px; margin: 0.3rem 0; padding: 0.4rem 0.7rem; }
+
+.blazor-error-boundary { background: #b32121; padding: 1rem; color: white; }
+.blazor-error-boundary::after { content: "Es ist ein Fehler aufgetreten."; }
+
+@media print {
+    .keindruck, #blazor-error-ui, #components-reconnect-modal { display: none !important; }
+    body { background: white; font-size: 11pt; }
+    main { padding: 0; max-width: none; }
+    table.matrix th, table.matrix td { min-width: 0; padding: 0.15rem 0.25rem; font-size: 9pt; }
+    a { color: inherit; text-decoration: none; }
+    .befunde .gelb { display: none; }
+    @page { size: A4 landscape; margin: 12mm; }
+}
+
+/* Wochenmail */
+.mailraster { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(420px, 1.3fr); gap: 2rem; align-items: start; }
+.mailraster textarea { width: 100%; font: inherit; padding: 0.4rem; border: 1px solid var(--linie); border-radius: 4px; }
+.mailraster select { max-width: 100%; }
+.empfaenger { display: grid; grid-template-columns: 1fr; gap: 0.2rem; max-height: 22rem; overflow-y: auto; background: white; border: 1px solid var(--linie); border-radius: 4px; padding: 0.4rem 0.6rem; }
+.empfaenger small { color: var(--grau); margin-left: 0.3rem; }
+.mailvorschau { background: white; border: 1px solid var(--linie); border-radius: 6px; padding: 0.8rem 1rem; }
+.mailvorschau pre { white-space: pre-wrap; font-family: inherit; margin: 0.8rem 0 0; border-top: 1px solid var(--linie); padding-top: 0.8rem; }
+a.knopf { display: inline-block; padding: 0.3rem 0.8rem; border: 1px solid var(--linie); border-radius: 4px; background: white; color: var(--text); text-decoration: none; }
+a.knopf.primaer { background: var(--gruen); color: white; border-color: var(--gruen); }
+@media (max-width: 900px) { .mailraster { grid-template-columns: 1fr; } }
+
+/* Formulare */
+.formular { background: white; border: 1px solid var(--linie); border-radius: 6px; padding: 0.4rem 1rem 0.8rem; margin: 1rem 0; max-width: 60rem; }
+.formular .felder { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 0.6rem 1rem; margin: 0.6rem 0; }
+.formular label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.9rem; }
+.formular label:has(input[type=checkbox]) { flex-direction: row; align-items: center; }
+button.gefahr { background: var(--rot); color: white; border-color: var(--rot); }
+tr.inaktiv td { color: var(--grau); }
+
+/* Anwesenheit, Ampel, Abrechnung */
+.ankreuzliste { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 0.3rem 1rem; margin: 0.5rem 0 1rem; }
+.ankreuzliste label { flex-direction: row !important; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem; border: 1px solid var(--linie); border-radius: 4px; background: #fcfcfb; }
+.ankreuzliste input[type=checkbox] { width: 1.2rem; height: 1.2rem; }
+.ankreuzliste small { color: var(--grau); }
+label.notiz { display: flex; flex-direction: column; gap: 0.2rem; max-width: 40rem; }
+label.notiz textarea { font: inherit; padding: 0.4rem; border: 1px solid var(--linie); border-radius: 4px; }
+tr.markiert td { background: var(--gruen-hell); }
+.ampel { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+.ampel.gruen { background: var(--gruen-hell); color: var(--gruen); }
+.ampel.gelb { background: var(--gelb-hell); color: var(--gelb); }
+.ampel.rot { background: var(--rot-hell); color: var(--rot); }
+td.zahl, th.zahl { text-align: right; white-space: nowrap; }
+button.klein { padding: 0.05rem 0.4rem; font-size: 0.8rem; }
+.abrechnung { margin-bottom: 1.5rem; }
+.gesamtsumme { font-weight: 600; font-size: 1.05rem; }
+.nurdruck { display: none; }
+.kopf nav { flex-wrap: wrap; }
+@media print {
+    .nurdruck { display: block; }
+    .abrechnung { break-after: page; }
+    .unterschrift { margin-top: 2.5rem; }
+    .anwesenheit { border: none; padding: 0; }
+}
+
+/* Personen, Hunde, Gebühren */
+.formular fieldset { border: 1px solid var(--linie); border-radius: 6px; padding: 0.4rem 0.8rem 0.6rem; margin: 0.6rem 0; }
+.formular legend { font-weight: 600; padding: 0 0.3rem; }
+.formular .reihe { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; align-items: center; }
+.gebuehr { font-weight: 600; }
+.gebuehr small { font-weight: normal; color: var(--grau); }
+.etikett { display: inline-block; font-size: 0.8rem; padding: 0 0.4rem; border-radius: 3px; background: #eef2ee; color: var(--gruen); margin-right: 0.2rem; }
+.etikett.grau { background: #f1f3f5; color: var(--grau); }

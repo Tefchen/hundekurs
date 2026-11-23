@@ -1,0 +1,92 @@
+﻿@page "/"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+
+<PageTitle>Hundekurs – Übersicht</PageTitle>
+
+<h1>Übersicht</h1>
+
+@{
+    var befunde = Zustand.Befunde;
+    var fehler = befunde.Count(b => b.Schwere == Schwere.Fehler);
+    var warnungen = befunde.Count(b => b.Schwere == Schwere.Warnung);
+    var naechster = Zustand.Plan.Chronologisch.FirstOrDefault(t => t.Status != TerminStatus.Durchgefuehrt);
+}
+
+<div class="kacheln">
+    <div class="kachel">
+        <div class="zahl">@Zustand.Plan.Termine.Count</div>
+        <div>Termine in der Saison</div>
+    </div>
+    <div class="kachel">
+        <div class="zahl">@Zustand.Gespanne.Count</div>
+        <div>Gespanne (A: @Zustand.Gespanne.Count(g => g.Gruppe == Gruppe.A), B: @Zustand.Gespanne.Count(g => g.Gruppe == Gruppe.B))</div>
+    </div>
+    <div class="kachel @(fehler > 0 ? "rot" : warnungen > 0 ? "gelb" : "gruen")">
+        <div class="zahl">@fehler / @warnungen</div>
+        <div>Fehler / Warnungen im Plan</div>
+    </div>
+</div>
+
+@if (naechster is not null)
+{
+    <h2>Nächster Termin</h2>
+    <p>
+        <a href="termin/@naechster.Id">@naechster.Datum.ToString("dddd, dd.MM.yyyy")</a>:
+        Gruppe @naechster.Gruppe auf Schweiß in @(Zustand.Revier(naechster.RevierId)?.Name ?? "–"),
+        Helfer: @string.Join(", ", naechster.Helfer.Select(Zustand.Name))
+    </p>
+}
+
+<h2>Kursjahr</h2>
+@{
+    var gehorsam = Zustand.Nebentermine(Terminart.Gehorsam);
+    var naechsterGehorsam = gehorsam.FirstOrDefault(t => t.Status == Terminstatus.Geplant && t.Datum >= DateOnly.FromDateTime(DateTime.Today));
+}
+@if (gehorsam.Count == 0)
+{
+    <p class="befund gelb">Noch kein Kursjahr angelegt. <a href="einstellungen">Kursjahr anlegen</a></p>
+}
+else
+{
+    <p>
+        Teil 1 (Gehorsam): @gehorsam[0].Datum.ToString("dd.MM.") – @gehorsam[^1].Datum.ToString("dd.MM.yyyy"),
+        @gehorsam.Count(t => t.Status == Terminstatus.Durchgefuehrt) von @gehorsam.Count(t => t.Status != Terminstatus.Abgesagt) durchgeführt.
+        @if (naechsterGehorsam is not null)
+        {
+            <span>Nächster Gehorsam: <a href="gehorsam">@naechsterGehorsam.Datum.ToString("dddd, dd.MM.")</a>.</span>
+        }
+    </p>
+}
+<p>
+    km-Berechnung: @(Zustand.RoutendienstVerfuegbar ? "Routendienst eingerichtet" : "kein Routendienst – km nur von Hand")
+    · <a href="kilometer">zur Abrechnung</a>
+</p>
+
+@if (Zustand.Gespanne.Count == 0)
+{
+    <p class="befund gelb">Noch keine Teilnehmer mit Gruppe erfasst. <a href="teilnehmer">Teilnehmer anlegen</a></p>
+}
+@if (!Zustand.Reviere.Any(r => r.FuerTrainingNutzbar))
+{
+    <p class="befund gelb">Noch kein Trainingsrevier angelegt. <a href="reviere">Revier anlegen</a></p>
+}
+
+<h2>Datenbank</h2>
+<p>
+    <code>@Zustand.Info.Pfad</code><br />
+    @if (Zustand.Info.Demodaten)
+    {
+        <small>Demodatenbank mit erfundenen Daten. Für echte Daten mit <code>dotnet run --launch-profile echt</code> starten – das nutzt eine eigene Datei.</small>
+    }
+    else
+    {
+        <small>Echte Daten. Beim Start wird täglich eine Sicherung im Unterordner „Sicherungen“ angelegt.</small>
+    }
+</p>
+
+@code {
+    protected override void OnInitialized() => Zustand.Geaendert += Aktualisieren;
+    private void Aktualisieren() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

@@ -1,0 +1,412 @@
+@page "/termin/{Id:int}"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+
+@if (Termin is null)
+{
+    <p>Termin nicht gefunden. <a href="plan">Zum Schweißplan</a></p>
+    return;
+}
+
+@{
+    var t = Termin!;
+    var revier = Zustand.Revier(t.RevierId);
+    var laeufer = Zustand.Planer.Laeufer(t);
+    var offen = t.Status != TerminStatus.Durchgefuehrt;
+    var befunde = Zustand.Befunde.Where(b => b.TerminId == t.Id).ToList();
+}
+
+<PageTitle>Fährtenplan @t.Datum.ToString("dd.MM.yyyy")</PageTitle>
+
+<h1>Fährtenplan @t.Datum.ToString("dddd, dd.MM.yyyy")</h1>
+
+<dl class="eckdaten">
+    <dt>Gruppe auf Schweiß</dt><dd>@t.Gruppe</dd>
+    <dt>Revier</dt>
+    <dd>
+        @(revier?.Name ?? "–")@(t.RevierFixiert ? " (von Hand festgelegt)" : "")
+        @if (offen)
+        {
+            <select class="keindruck" value="@(t.RevierFixiert ? t.RevierId : 0)" @onchange="RevierGewaehlt">
+                <option value="0">automatisch</option>
+                @foreach (var r in Zustand.Reviere.Where(r => r.FuerTrainingNutzbar))
+                {
+                    <option value="@r.Id">@r.Name</option>
+                }
+            </select>
+        }
+    </dd>
+    <dt>Vorbereitung</dt><dd>@t.Datum.AddDays(-1).ToString("dddd, dd.MM.") (Vorabend)</dd>
+    <dt>Helfer</dt>
+    <dd>
+        @(t.Helfer.Count == 0 ? "–" : string.Join(", ", t.Helfer.Select(Zustand.Name)))
+        <br /><small>aus Gruppe @Zustand.Planer.Helfergruppe(t): legen am Vorabend die Fährten und gehen als Beobachter mit</small>
+    </dd>
+    @if (t.Abgemeldet.Count > 0)
+    {
+        <dt>Abgemeldet</dt><dd>@string.Join(", ", t.Abgemeldet.Select(Zustand.Name))</dd>
+    }
+    @if (t.Gaeste.Count > 0)
+    {
+        <dt>Holt nach</dt><dd>@string.Join(", ", t.Gaeste.Select(Zustand.Name))</dd>
+    }
+    <dt>Status</dt><dd>@t.Status</dd>
+</dl>
+
+<div class="werkzeuge keindruck">
+    <a href="plan">← Schweißplan</a>
+    <span class="trenner"></span>
+    @if (t.Status == TerminStatus.Geplant)
+    {
+        <button @onclick="() => Zustand.Veroeffentlichen(t.Id)">Veröffentlichen</button>
+    }
+    <button onclick="window.print()">Drucken</button>
+    <a href="wochenmail?termin=@t.Id">Wochenmail für diesen Termin</a>
+</div>
+
+@if (t.Status == TerminStatus.Durchgefuehrt)
+{
+    <h2>Gelaufen</h2>
+    <table class="liste">
+        <thead><tr><th>Fährte</th><th>Hundeführer</th><th>Hund</th><th>Ergebnis</th></tr></thead>
+        <tbody>
+            @foreach (var l in t.Ist.OrderBy(l => l.FaehrteNr))
+            {
+                var g = Zustand.Gespann(l.GespannId);
+                <tr><td>@revier?.Kuerzel @l.FaehrteNr</td><td>@g.Fuehrer</td><td>@g.Hund</td><td>@Ergebnis(l.Ergebnis)</td></tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <h2>Reihenfolge</h2>
+    <table class="liste">
+        <thead><tr><th>Sequenz</th><th>Fährte</th><th>Hundeführer</th><th>Hund</th><th>Hinweis</th></tr></thead>
+        <tbody>
+            @foreach (var seq in t.Zuteilungen.GroupBy(z => z.Sequenz).OrderBy(x => x.Key))
+            {
+                var erste = true;
+                @foreach (var z in seq.OrderBy(z => z.FaehrteNr))
+                {
+                    var g = Zustand.Gespann(z.GespannId);
+                    <tr class="@(erste ? "neueSequenz" : "")">
+                        <td>@(erste ? seq.Key.ToString() : "")</td>
+                        <td>@revier?.Kuerzel @z.FaehrteNr</td>
+                        <td>@g.Fuehrer</td>
+                        <td>@g.Hund</td>
+                        <td>@(z.ZweiterLaufAufFaehrte ? "zweiter Lauf auf dieser Fährte" : "")@(t.Gaeste.Contains(z.GespannId) ? " holt nach" : "")</td>
+                    </tr>
+                    erste = false;
+                }
+            }
+        </tbody>
+    </table>
+}
+
+<Befundliste Befunde="befunde" />
+
+<section class="formular keindruck">
+    <h2>Ausbilder im Einsatz</h2>
+    <table class="liste kompakt">
+        <thead><tr><th>Ausbilder</th><th>Vorbereitung @t.Datum.AddDays(-1).ToString("ddd dd.MM.")</th><th>Training @t.Datum.ToString("ddd dd.MM.")</th></tr></thead>
+        <tbody>
+            @foreach (var a in Zustand.Ausbilder())
+            {
+                var id = a.PersonId!.Value;
+                <tr>
+                    <td>@a.Vorname @a.Nachname</td>
+                    <td><input type="checkbox" checked="@_vorbereitung.Contains(id)" @onchange="e => Umschalten(_vorbereitung, id, (bool)e.Value!)" /></td>
+                    <td><input type="checkbox" checked="@_training.Contains(id)" @onchange="e => Umschalten(_training, id, (bool)e.Value!)" /></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <button class="primaer" disabled="@_einsatzSpeichert" @onclick="EinsaetzeSpeichern">Ausbilder speichern</button>
+    @if (_einsatzMeldung is not null)
+    {
+        <p class="befund gelb">@_einsatzMeldung</p>
+    }
+</section>
+
+@if (offen)
+{
+    <section class="aktionen keindruck">
+        <h2>Änderungen</h2>
+
+        <fieldset>
+            <legend>Fährten tauschen</legend>
+            <select @bind="_tauschA"><option value="0">Gespann …</option>@foreach (var id in laeufer) {<option value="@id">@Zustand.Name(id)</option>}</select>
+            ⇄
+            <select @bind="_tauschB"><option value="0">Gespann …</option>@foreach (var id in laeufer) {<option value="@id">@Zustand.Name(id)</option>}</select>
+            <button disabled="@(_tauschA == 0 || _tauschB == 0)" @onclick="FaehrtenTauschen">Prüfen</button>
+        </fieldset>
+
+        <fieldset>
+            <legend>Termin tauschen (auch mit der anderen Gruppe)</legend>
+            <select @bind="_tt1"><option value="0">Gespann hier …</option>@foreach (var z in t.Zuteilungen.OrderBy(z => z.GespannId)) {<option value="@z.GespannId">@Zustand.Name(z.GespannId)</option>}</select>
+            ⇄
+            <select @bind="_ttTermin">
+                <option value="0">Termin …</option>
+                @foreach (var x in Zustand.Plan.Chronologisch.Where(x => x.Id != t.Id && x.Status != TerminStatus.Durchgefuehrt))
+                {
+                    <option value="@x.Id">@x.Datum.ToString("dd.MM.") – Gruppe @x.Gruppe</option>
+                }
+            </select>
+            @if (_ttTermin != 0)
+            {
+                <select @bind="_tt2">
+                    <option value="0">Gespann dort …</option>
+                    @foreach (var z in Zustand.Plan.Termin(_ttTermin).Zuteilungen.Where(z => !t.Zuteilungen.Any(y => y.GespannId == z.GespannId)).OrderBy(z => z.GespannId))
+                    {
+                        <option value="@z.GespannId">@Zustand.Name(z.GespannId)</option>
+                    }
+                </select>
+            }
+            <button disabled="@(_tt1 == 0 || _ttTermin == 0 || _tt2 == 0)" @onclick="TermineTauschen">Prüfen</button>
+            <br /><small>Beide übernehmen nach Möglichkeit die Fährte des anderen.</small>
+        </fieldset>
+
+        <fieldset>
+            <legend>Helferdienst übergeben (selber Tag)</legend>
+            <select @bind="_helfer"><option value="0">Helfer …</option>@foreach (var id in t.Helfer) {<option value="@id">@Zustand.Name(id)</option>}</select>
+            →
+            <select @bind="_vertretung"><option value="0">übernimmt …</option>@foreach (var g in Zustand.Gespanne.Where(g => Zustand.Planer.KannHelfen(t, g.Id) && !t.Helfer.Contains(g.Id))) {<option value="@g.Id">@Zustand.Name(g.Id)</option>}</select>
+            <button disabled="@(_helfer == 0 || _vertretung == 0)" @onclick="HelferVertreten">Prüfen</button>
+        </fieldset>
+
+        <fieldset>
+            <legend>Helferdienst mit anderem Termin tauschen</legend>
+            <select @bind="_helfer2"><option value="0">Helfer hier …</option>@foreach (var id in t.Helfer) {<option value="@id">@Zustand.Name(id)</option>}</select>
+            ⇄
+            <select @bind="_andererTermin">
+                <option value="0">Termin …</option>
+                @foreach (var x in Zustand.Plan.Chronologisch.Where(x => x.Id != t.Id && x.Gruppe == t.Gruppe && x.Status != TerminStatus.Durchgefuehrt))
+                {
+                    <option value="@x.Id">@x.Datum.ToString("dd.MM.")</option>
+                }
+            </select>
+            @if (_andererTermin != 0)
+            {
+                <select @bind="_gegenueber">
+                    <option value="0">Helfer dort …</option>
+                    @foreach (var id in Zustand.Plan.Termin(_andererTermin).Helfer)
+                    {
+                        <option value="@id">@Zustand.Name(id)</option>
+                    }
+                </select>
+            }
+            <button disabled="@(_helfer2 == 0 || _andererTermin == 0 || _gegenueber == 0)" @onclick="HelferTauschen">Prüfen</button>
+        </fieldset>
+
+        <fieldset>
+            <legend>Abmelden</legend>
+            <select @bind="_abmelden">
+                <option value="0">Gespann …</option>
+                @foreach (var g in Zustand.Gespanne.Where(g => (g.Gruppe == t.Gruppe || t.Gaeste.Contains(g.Id) || t.Helfer.Contains(g.Id)) && !t.Abgemeldet.Contains(g.Id)))
+                {
+                    <option value="@g.Id">@Zustand.Name(g.Id)</option>
+                }
+            </select>
+            <button disabled="@(_abmelden == 0)" @onclick="Abmelden">Prüfen</button>
+        </fieldset>
+
+        <fieldset>
+            <legend>Nachholen / wieder anmelden</legend>
+            <select @bind="_nachholen">
+                <option value="0">Gespann …</option>
+                @foreach (var g in Zustand.Gespanne.Where(g => !laeufer.Contains(g.Id) && !t.Helfer.Contains(g.Id)))
+                {
+                    <option value="@g.Id">@Zustand.Name(g.Id) (Gruppe @g.Gruppe)</option>
+                }
+            </select>
+            <button disabled="@(_nachholen == 0)" @onclick="Nachholen">Prüfen</button>
+        </fieldset>
+
+        <fieldset>
+            <legend>Als durchgeführt erfassen</legend>
+            <table class="liste kompakt">
+                @foreach (var z in t.Zuteilungen.OrderBy(z => z.FaehrteNr))
+                {
+                    <tr>
+                        <td>@revier?.Kuerzel @z.FaehrteNr</td>
+                        <td>@Zustand.Name(z.GespannId)</td>
+                        <td>
+                            <select value="@ErgebnisVon(z.GespannId)" @onchange="e => _ergebnisse[z.GespannId] = Enum.Parse<LaufErgebnis>(e.Value!.ToString()!)">
+                                @foreach (var e in Enum.GetValues<LaufErgebnis>())
+                                {
+                                    <option value="@e">@Ergebnis(e)</option>
+                                }
+                            </select>
+                        </td>
+                    </tr>
+                }
+            </table>
+            <button @onclick="Durchfuehren">Prüfen</button>
+        </fieldset>
+    </section>
+}
+
+@if (_vorschlag is not null)
+{
+    <section class="vorschau keindruck">
+        <h2>Vorschau: @_aktion</h2>
+        @if (!_vorschlag.Moeglich)
+        {
+            <p class="befund rot">Nicht möglich: @_vorschlag.Grund</p>
+            @if (_vorschlag.Alternativen.Count > 0)
+            {
+                <p>Möglich wäre stattdessen:</p>
+                <ul>@foreach (var a in _vorschlag.Alternativen) {<li>@a</li>}</ul>
+            }
+            <button @onclick="Verwerfen">Schließen</button>
+        }
+        else
+        {
+            <p>@_vorschlag.Aenderungen.Count Änderung(en) im Plan:</p>
+            <ul class="aenderungen">
+                @foreach (var a in _vorschlag.Aenderungen)
+                {
+                    <li>@a.Datum.ToString("dd.MM."): @a.Beschreibung</li>
+                }
+            </ul>
+            <Befundliste Befunde="_vorschlag.Befunde" />
+            <button class="primaer" @onclick="Uebernehmen">Übernehmen</button>
+            <button @onclick="Verwerfen">Verwerfen</button>
+        }
+        @if (_meldung is not null)
+        {
+            <p class="befund gelb">@_meldung</p>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Termin? Termin => Zustand.Plan.Termine.SingleOrDefault(x => x.Id == Id);
+
+    private HashSet<int> _vorbereitung = [];
+    private HashSet<int> _training = [];
+    private int _geladenFuer;
+    private string? _einsatzMeldung;
+    private bool _einsatzSpeichert;
+
+    protected override void OnParametersSet()
+    {
+        if (_geladenFuer == Id) return;
+        _geladenFuer = Id;
+        (_vorbereitung, _training) = Zustand.TrainingEinsaetze(Id);
+        _einsatzMeldung = null;
+    }
+
+    private static void Umschalten(HashSet<int> menge, int id, bool an)
+    {
+        if (an) menge.Add(id); else menge.Remove(id);
+    }
+
+    private async Task EinsaetzeSpeichern()
+    {
+        if (Termin is not { } t) return;
+        _einsatzSpeichert = true;
+        try
+        {
+            _einsatzMeldung = await Zustand.TrainingEinsaetzeSpeichern(t, _vorbereitung, _training) ?? "Gespeichert.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            _einsatzMeldung = ex.Message;
+        }
+        finally
+        {
+            _einsatzSpeichert = false;
+        }
+    }
+
+    private int _tauschA, _tauschB, _helfer, _vertretung, _helfer2, _andererTermin, _gegenueber, _abmelden, _nachholen, _tt1, _ttTermin, _tt2;
+    private readonly Dictionary<int, LaufErgebnis> _ergebnisse = [];
+
+    private Aenderungsvorschlag? _vorschlag;
+    private Saisonplan? _basis;
+    private string _aktion = "";
+    private string? _meldung;
+
+    private void Pruefen(string aktion, Func<Tauschdienst, Saisonplan, Aenderungsvorschlag> berechnen)
+    {
+        _basis = Zustand.Plan;
+        _aktion = aktion;
+        _meldung = null;
+        _vorschlag = berechnen(Zustand.Tauschdienst, _basis);
+    }
+
+    private void FaehrtenTauschen() =>
+        Pruefen($"Fährtentausch {Zustand.Name(_tauschA)} ⇄ {Zustand.Name(_tauschB)}", (d, p) => d.FaehrtenTauschen(p, Id, _tauschA, _tauschB));
+
+    private void TermineTauschen()
+    {
+        var anderer = Zustand.Plan.Termin(_ttTermin);
+        Pruefen($"Termintausch {Zustand.Name(_tt1)} ⇄ {Zustand.Name(_tt2)} ({anderer.Datum:dd.MM.})",
+            (d, p) => d.TermineTauschen(p, Id, _tt1, _ttTermin, _tt2));
+    }
+
+    private void HelferVertreten() =>
+        Pruefen($"{Zustand.Name(_vertretung)} übernimmt Helferdienst von {Zustand.Name(_helfer)}", (d, p) => d.HelferVertreten(p, Id, _helfer, _vertretung));
+
+    private void HelferTauschen()
+    {
+        var anderer = Zustand.Plan.Termin(_andererTermin);
+        Pruefen($"Helfertausch {Zustand.Name(_helfer2)} ⇄ {Zustand.Name(_gegenueber)} ({anderer.Datum:dd.MM.})",
+            (d, p) => d.HelferTauschen(p, Id, _helfer2, _andererTermin, _gegenueber));
+    }
+
+    private void Abmelden() => Pruefen($"Abmeldung {Zustand.Name(_abmelden)}", (d, p) => d.Abmelden(p, Id, _abmelden));
+
+    private void Nachholen() => Pruefen($"{Zustand.Name(_nachholen)} holt nach", (d, p) => d.Nachholen(p, Id, _nachholen));
+
+    private void Durchfuehren()
+    {
+        var ist = Termin!.Zuteilungen.Select(z => new Lauf(z.GespannId, z.FaehrteNr, ErgebnisVon(z.GespannId))).ToList();
+        Pruefen("Termin als durchgeführt erfassen", (d, p) => d.Durchfuehren(p, Id, ist));
+    }
+
+    private LaufErgebnis ErgebnisVon(int gespannId) => _ergebnisse.GetValueOrDefault(gespannId, LaufErgebnis.Normal);
+
+    private void Uebernehmen()
+    {
+        if (_vorschlag is null || _basis is null) return;
+        if (Zustand.Uebernehmen(_basis, _vorschlag, _aktion))
+        {
+            Verwerfen();
+            _tauschA = _tauschB = _helfer = _vertretung = _helfer2 = _andererTermin = _gegenueber = _abmelden = _nachholen = _tt1 = _ttTermin = _tt2 = 0;
+            _ergebnisse.Clear();
+        }
+        else
+        {
+            _meldung = "Der Plan wurde inzwischen geändert. Bitte die Änderung erneut prüfen.";
+        }
+    }
+
+    private void Verwerfen()
+    {
+        _vorschlag = null;
+        _basis = null;
+        _meldung = null;
+    }
+
+    private void RevierGewaehlt(ChangeEventArgs e)
+    {
+        var id = int.TryParse(e.Value?.ToString(), out var r) && r > 0 ? r : (int?)null;
+        Zustand.RevierFestlegen(Id, id);
+    }
+
+    private static string Ergebnis(LaufErgebnis e) => e switch
+    {
+        LaufErgebnis.Normal => "gelaufen",
+        LaufErgebnis.Abbruch => "Abbruch",
+        _ => "nicht angetreten",
+    };
+
+    protected override void OnInitialized() => Zustand.Geaendert += Aktualisieren;
+    private void Aktualisieren() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

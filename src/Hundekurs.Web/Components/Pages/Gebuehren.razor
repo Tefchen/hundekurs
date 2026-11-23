@@ -1,0 +1,174 @@
+@page "/gebuehren"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+
+<PageTitle>Kursgebühren</PageTitle>
+
+<h1>Kursgebühren</h1>
+
+<section class="formular keindruck">
+    <h2>Preise @Zustand.Kursbezeichnung</h2>
+    <p>
+        Ein Preis gilt für genau eine Kombination der Ausbildungsteile. Vereinsmitglieder zahlen den Mitgliederpreis,
+        Wiederholer die Hälfte des für sie gültigen Preises (ein wiederholendes Mitglied also die Hälfte des Mitgliederpreises).
+    </p>
+    <table class="liste">
+        <thead>
+            <tr><th>Bezeichnung</th><th>Grundgehorsam</th><th>Schalenwild</th><th>Niederwild</th><th class="zahl">Preis</th><th class="zahl">Mitglieder</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var p in _pakete)
+            {
+                <tr>
+                    <td><input @bind="p.Bezeichnung" /></td>
+                    <td><input type="checkbox" @bind="p.Gehorsam" /></td>
+                    <td><input type="checkbox" @bind="p.Schalenwild" /></td>
+                    <td><input type="checkbox" @bind="p.Niederwild" /></td>
+                    <td class="zahl"><input type="number" step="0.01" min="0" style="width:7rem" @bind="p.Preis" /> €</td>
+                    <td class="zahl"><input type="number" step="0.01" min="0" style="width:7rem" @bind="p.Mitgliederpreis" /> €</td>
+                    <td>
+                        <button class="primaer" @onclick="() => PaketSpeichern(p)">Speichern</button>
+                        @if (p.Id != 0)
+                        {
+                            <button @onclick="() => PaketLoeschen(p)">Löschen</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <div class="werkzeuge">
+        <button @onclick="NeuesPaket">Weitere Kombination</button>
+    </div>
+    <p class="legende">
+        Beispiel: Wer mit bestandener Brauchbarkeit nur Niederwild macht, braucht eine eigene Kombination „nur Niederwild“.
+        Sonderfälle lassen sich am Gespann mit einem Betrag von Hand regeln.
+    </p>
+</section>
+
+@if (_meldung is not null)
+{
+    <p class="befund @(_fehler ? "rot" : "gruen") keindruck">@_meldung</p>
+}
+
+<h2>Übersicht</h2>
+<div class="werkzeuge keindruck">
+    <label><input type="checkbox" @bind="_nurOffen" /> nur offene</label>
+    <label>bezahlt am <input type="date" @bind="_datum" /></label>
+    <button onclick="window.print()">Drucken</button>
+</div>
+
+@{
+    var zeilen = _teilnehmer.Select(t => (T: t, G: Zustand.Gebuehr(t))).ToList();
+    var soll = zeilen.Sum(z => z.G.Betrag ?? 0);
+    var bezahlt = zeilen.Where(z => z.T.BezahltAm is not null).Sum(z => z.G.Betrag ?? 0);
+}
+
+<table class="liste">
+    <thead>
+        <tr><th>Hundeführer</th><th>Hund</th><th>Ausbildung</th><th>Rechenweg</th><th class="zahl">Betrag</th><th>bezahlt</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var (t, g) in zeilen.Where(z => !_nurOffen || z.T.BezahltAm is null))
+        {
+            <tr>
+                <td>@t.Nachname, @t.Vorname</td>
+                <td>@t.Hund</td>
+                <td>@t.Ausbildung.Text</td>
+                <td><small>@g.Rechenweg</small></td>
+                <td class="zahl">@(g.Betrag is decimal b ? Gebuehrenregel.Euro(b) : "?")</td>
+                <td>
+                    <label class="keindruck">
+                        <input type="checkbox" checked="@(t.BezahltAm is not null)" @onchange="e => Bezahlt(t, (bool)e.Value!)" />
+                        @t.BezahltAm?.ToString("dd.MM.yyyy")
+                    </label>
+                    <span class="nurdruck">@(t.BezahltAm?.ToString("dd.MM.yyyy") ?? "offen")</span>
+                </td>
+            </tr>
+        }
+    </tbody>
+    <tfoot>
+        <tr><th colspan="4">Summe (@zeilen.Count Gespanne)</th><th class="zahl">@Gebuehrenregel.Euro(soll)</th><th></th></tr>
+        <tr><th colspan="4">davon bezahlt</th><th class="zahl">@Gebuehrenregel.Euro(bezahlt)</th><th></th></tr>
+        <tr><th colspan="4">offen</th><th class="zahl">@Gebuehrenregel.Euro(soll - bezahlt)</th><th></th></tr>
+    </tfoot>
+</table>
+@if (zeilen.Any(z => !z.G.Ermittelt))
+{
+    <p class="befund gelb">Bei „?“ fehlt ein Preis für die gewählte Kombination.</p>
+}
+<p class="legende keindruck">Den Haken setzt du, wenn der Schatzmeister den Zahlungseingang meldet. Als Datum gilt „bezahlt am“ oben.</p>
+
+@code {
+    private sealed class Paket
+    {
+        public int Id { get; init; }
+        public string Bezeichnung { get; set; } = "";
+        public bool Gehorsam { get; set; }
+        public bool Schalenwild { get; set; }
+        public bool Niederwild { get; set; }
+        public decimal Preis { get; set; }
+        public decimal Mitgliederpreis { get; set; }
+    }
+
+    private List<Paket> _pakete = [];
+    private List<TeilnehmerDaten> _teilnehmer = [];
+    private bool _nurOffen;
+    private DateOnly _datum = DateOnly.FromDateTime(DateTime.Today);
+    private string? _meldung;
+    private bool _fehler;
+
+    private void Laden()
+    {
+        _pakete = Zustand.Gebuehrenpakete.Select(p => new Paket
+        {
+            Id = p.Id, Bezeichnung = p.Bezeichnung, Gehorsam = p.Gehorsam, Schalenwild = p.Schalenwild, Niederwild = p.Niederwild,
+            Preis = p.Preis, Mitgliederpreis = p.Mitgliederpreis,
+        }).ToList();
+        _teilnehmer = Zustand.Teilnehmer().OrderBy(t => t.Nachname).ThenBy(t => t.Vorname).ToList();
+    }
+
+    private void NeuesPaket() => _pakete.Add(new Paket { Gehorsam = true });
+
+    private void PaketSpeichern(Paket p) => Ausfuehren(() =>
+    {
+        Zustand.GebuehrenpaketSpeichern(new Gebuehrenpaket(p.Id, p.Bezeichnung, p.Gehorsam, p.Schalenwild, p.Niederwild, p.Preis, p.Mitgliederpreis));
+        return $"„{p.Bezeichnung}“ gespeichert.";
+    });
+
+    private void PaketLoeschen(Paket p) => Ausfuehren(() =>
+    {
+        Zustand.GebuehrenpaketLoeschen(new Gebuehrenpaket(p.Id, p.Bezeichnung, p.Gehorsam, p.Schalenwild, p.Niederwild, p.Preis, p.Mitgliederpreis));
+        return $"„{p.Bezeichnung}“ gelöscht.";
+    });
+
+    private void Bezahlt(TeilnehmerDaten t, bool an) => Ausfuehren(() =>
+    {
+        Zustand.BezahltSetzen(t, an ? _datum : null);
+        return $"{t.Vorname} {t.Nachname}: {(an ? $"bezahlt am {_datum:dd.MM.yyyy}" : "wieder offen")}.";
+    });
+
+    private void Ausfuehren(Func<string> aktion)
+    {
+        try
+        {
+            _meldung = aktion();
+            _fehler = false;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _meldung = ex.Message;
+            _fehler = true;
+        }
+        Laden();
+    }
+
+    protected override void OnInitialized()
+    {
+        Laden();
+        Zustand.Geaendert += Aktualisieren;
+    }
+
+    private void Aktualisieren() => InvokeAsync(() => { Laden(); StateHasChanged(); });
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

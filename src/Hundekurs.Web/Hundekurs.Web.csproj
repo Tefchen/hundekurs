@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <UserSecretsId>hundekurs-web-5b1f0c2e</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Nur für „dotnet ef“ (Migrationen); wird nicht mit ausgeliefert. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Hundekurs.Daten\Hundekurs.Daten.csproj" />
+    <ProjectReference Include="..\Hundekurs.Domain\Hundekurs.Domain.csproj" />
+    <ProjectReference Include="..\Hundekurs.Planung\Hundekurs.Planung.csproj" />
+  </ItemGroup>
+
+</Project>

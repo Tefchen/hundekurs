@@ -1,0 +1,252 @@
+@page "/gehorsam"
+@page "/apportierarbeit"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+@inject NavigationManager Navigation
+
+@{
+    var termine = Zustand.Nebentermine(Art);
+    var gebucht = Zustand.Gebucht(Art);
+    var ausbilder = Zustand.Ausbilder();
+    var gewaehlt = termine.FirstOrDefault(t => t.Id == _terminId);
+}
+
+<PageTitle>@Titel</PageTitle>
+
+<h1>@Titel</h1>
+
+<p>
+    @(Art == Terminart.Gehorsam
+        ? "Teil 1: Grundgehorsam, zivil und jagdlich. Für die jagdliche Ausbildung sind mindestens 60 % Anwesenheit an den stattgefundenen Sonntagen nötig; für zivile Gespanne hat Fehlen keine Folgen."
+        : "Mittwochs ab 17:30, beginnend am Mittwoch vor dem ersten Schweißsonntag.")
+    Teilnehmer: @gebucht.Count Gespanne.
+</p>
+
+@if (termine.Count == 0)
+{
+    <p class="befund gelb">Noch keine Termine. <a href="einstellungen">Kursjahr anlegen</a></p>
+}
+else
+{
+    <table class="liste">
+        <thead><tr><th>Datum</th><th>Ort</th><th>Status</th><th>Anwesend</th><th>Ausbilder</th><th>Notiz</th><th class="keindruck"></th></tr></thead>
+        <tbody>
+            @foreach (var t in termine)
+            {
+                <tr class="@(t.Status == Terminstatus.Abgesagt ? "inaktiv" : "") @(t.Id == _terminId ? "markiert" : "")">
+                    <td>@t.Datum.ToString("ddd dd.MM.")@(t.Uhrzeit is TimeOnly u ? $", {u:HH\\:mm}" : "")</td>
+                    <td>@Zustand.GelaendeName(t.GelaendeId)</td>
+                    <td>@StatusText(t.Status)</td>
+                    <td>@(t.Status == Terminstatus.Durchgefuehrt ? $"{t.Anwesend.Count} von {t.Erfasst.Count}" : "")</td>
+                    <td>@(t.Ausbilder.Count > 0 ? t.Ausbilder.Count.ToString() : "")</td>
+                    <td>@t.Notiz</td>
+                    <td class="keindruck"><button @onclick="() => Waehlen(t, gebucht)">@(t.Status == Terminstatus.Durchgefuehrt ? "Liste ändern" : "Liste führen")</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (gewaehlt is not null)
+{
+    <section class="formular anwesenheit">
+        <h2>Anwesenheit @gewaehlt.Datum.ToString("dddd, dd.MM.yyyy") – @Zustand.GelaendeName(gewaehlt.GelaendeId)</h2>
+
+        <div class="werkzeuge keindruck">
+            <button @onclick="() => { foreach (var g in gebucht) _anwesend.Add(g.KursteilnahmeId!.Value); }">Alle anwesend</button>
+            <button @onclick="() => _anwesend.Clear()">Keiner</button>
+            <button onclick="window.print()">Liste drucken</button>
+        </div>
+
+        <div class="ankreuzliste">
+            @foreach (var g in gebucht)
+            {
+                var id = g.KursteilnahmeId!.Value;
+                <label>
+                    <input type="checkbox" checked="@_anwesend.Contains(id)" @onchange="e => Umschalten(_anwesend, id, (bool)e.Value!)" />
+                    @g.Vorname @g.Nachname <small>@g.Hund@(g.Ausbildung.Jagdlich ? "" : " · zivil")</small>
+                </label>
+            }
+        </div>
+
+        <h3>Ausbilder vor Ort</h3>
+        <div class="ankreuzliste">
+            @foreach (var a in ausbilder)
+            {
+                var id = a.PersonId!.Value;
+                <label>
+                    <input type="checkbox" checked="@_ausbilder.Contains(id)" @onchange="e => Umschalten(_ausbilder, id, (bool)e.Value!)" />
+                    @a.Vorname @a.Nachname
+                </label>
+            }
+        </div>
+
+        <label class="notiz">Notiz <textarea rows="2" @bind="_notiz"></textarea></label>
+
+        <div class="werkzeuge keindruck">
+            <button class="primaer" disabled="@_speichert" @onclick="() => Speichern(gewaehlt)">Speichern (Termin durchgeführt)</button>
+            @if (gewaehlt.Status != Terminstatus.Abgesagt)
+            {
+                <button @onclick="() => Status(gewaehlt, Terminstatus.Abgesagt)">Termin absagen</button>
+            }
+            @if (gewaehlt.Status != Terminstatus.Geplant)
+            {
+                <button @onclick="() => Status(gewaehlt, Terminstatus.Geplant)">Wieder auf „geplant“</button>
+            }
+            <button @onclick="() => _terminId = null">Schließen</button>
+        </div>
+        @if (_meldung is not null)
+        {
+            <p class="befund @(_fehler ? "rot" : "gelb")">@_meldung</p>
+        }
+    </section>
+}
+
+@if (Art == Terminart.Gehorsam && termine.Count > 0)
+{
+    var staende = Zustand.Zulassungen();
+    var plaetze = Plaetze();
+    var pflichtig = gebucht.Where(g => g.Ausbildung.ZulassungErforderlich).ToList();
+    var schweiss = pflichtig.Where(g => g.Schalenwild).Select(g => g.KursteilnahmeId!.Value).ToHashSet();
+    var anwaerter = Zulassungsregel.Anwaerterliste(staende.Values.Where(s => schweiss.Contains(s.GespannId)), plaetze);
+
+    <h2>Zulassung zu Teil 2</h2>
+    <p class="legende">Nur jagdliche Gespanne; zivile und durch bestandene Brauchbarkeit befreite (nur Niederwild) sind nicht aufgeführt.</p>
+    <table class="liste">
+        <thead><tr><th>Gespann</th><th>Anwesend</th><th>Nötig</th><th>Stand</th></tr></thead>
+        <tbody>
+            @foreach (var g in pflichtig.OrderByDescending(g => staende[g.KursteilnahmeId!.Value].Anwesend))
+            {
+                var s = staende[g.KursteilnahmeId!.Value];
+                <tr>
+                    <td>@g.Vorname @g.Nachname <small>@g.Hund</small></td>
+                    <td>@s.Text</td>
+                    <td>@s.Erforderlich von @s.Termine</td>
+                    <td>
+                        <span class="ampel @s.Ampel.ToString().ToLowerInvariant()">@AmpelText(s.Ampel)</span>
+                        @if (s.Ausnahme) { <span class="ampel gruen">Ausnahme</span> }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (anwaerter.Count > 0)
+    {
+        <h3>Anwärterliste Schweiß (@plaetze Plätze)</h3>
+        <table class="liste kompakt">
+            <thead><tr><th>Rang</th><th>Gespann</th><th>Anwesend</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var a in anwaerter)
+                {
+                    var g = gebucht.First(x => x.KursteilnahmeId == a.Stand.GespannId);
+                    <tr class="@(a.ImKontingent ? "" : "inaktiv")">
+                        <td>@a.Rang</td>
+                        <td>@g.Vorname @g.Nachname <small>@g.Hund</small></td>
+                        <td>@a.Stand.Anwesend</td>
+                        <td>@(a.ImKontingent ? "im Kontingent" : "Nachrücker")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="legende">Nur zugelassene Gespanne mit Nachsuche auf Schalenwild (grün oder Ausnahme). Bei Gleichstand an der Grenze sind alle Ranggleichen markiert. Freie Plätze gehen an die Nächstbesten.</p>
+    }
+}
+
+@code {
+    private Terminart Art => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("apportier", StringComparison.OrdinalIgnoreCase)
+        ? Terminart.Apportierarbeit : Terminart.Gehorsam;
+
+    private string Titel => Art == Terminart.Gehorsam ? "Teil 1: Grundgehorsam" : "Nachsuche auf Niederwild";
+
+    private int? _terminId;
+    private Terminart? _letzteArt;
+
+    protected override void OnParametersSet()
+    {
+        if (_letzteArt != Art)
+        {
+            _letzteArt = Art;
+            _terminId = null;
+            _meldung = null;
+        }
+    }
+    private HashSet<int> _anwesend = [];
+    private HashSet<int> _ausbilder = [];
+    private string? _notiz;
+    private string? _meldung;
+    private bool _fehler, _speichert;
+
+    private void Waehlen(NebenterminDaten t, List<TeilnehmerDaten> gebucht)
+    {
+        _terminId = t.Id;
+        _anwesend = t.Status == Terminstatus.Durchgefuehrt ? t.Anwesend.ToHashSet() : [];
+        _ausbilder = t.Ausbilder.ToHashSet();
+        _notiz = t.Notiz;
+        _meldung = null;
+    }
+
+    private static void Umschalten(HashSet<int> menge, int id, bool an)
+    {
+        if (an) menge.Add(id); else menge.Remove(id);
+    }
+
+    private async Task Speichern(NebenterminDaten t)
+    {
+        _speichert = true;
+        try
+        {
+            _meldung = await Zustand.AnwesenheitSpeichern(t, Art, _anwesend, _ausbilder, _notiz);
+            _fehler = false;
+            if (_meldung is null) _terminId = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _meldung = ex.Message;
+            _fehler = true;
+        }
+        finally
+        {
+            _speichert = false;
+        }
+    }
+
+    private void Status(NebenterminDaten t, Terminstatus status)
+    {
+        try
+        {
+            Zustand.TerminStatusSetzen(t.Id, t.Datum, Art, status);
+            _terminId = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _meldung = ex.Message;
+            _fehler = true;
+        }
+    }
+
+    private int Plaetze()
+    {
+        var kapazitaeten = Zustand.Reviere.Where(r => r.FuerTrainingNutzbar).Select(r => r.Kapazitaet).ToList();
+        return kapazitaeten.Count == 0 ? 14 : 2 * kapazitaeten.Min();
+    }
+
+    private static string StatusText(Terminstatus s) => s switch
+    {
+        Terminstatus.Durchgefuehrt => "durchgeführt",
+        Terminstatus.Abgesagt => "abgesagt",
+        Terminstatus.Veroeffentlicht => "veröffentlicht",
+        _ => "geplant",
+    };
+
+    private static string AmpelText(Ampel a) => a switch
+    {
+        Ampel.Gruen => "erreicht",
+        Ampel.Gelb => "noch erreichbar",
+        _ => "nicht mehr erreichbar",
+    };
+
+    protected override void OnInitialized() => Zustand.Geaendert += Aktualisieren;
+    private void Aktualisieren() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

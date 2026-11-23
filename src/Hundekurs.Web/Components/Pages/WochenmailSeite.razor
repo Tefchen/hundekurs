@@ -1,0 +1,160 @@
+@page "/wochenmail"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+@inject IJSRuntime JS
+
+<PageTitle>Wochenmail</PageTitle>
+
+<h1>Wochenmail</h1>
+
+<p>
+    Plan für den nächsten Trainingstag samt Vorbereitungsabend. Alle Empfänger stehen im BCC, damit niemand die Adressen der anderen sieht.
+</p>
+
+@{
+    var termin = AktuellerTermin;
+}
+
+@if (termin is null)
+{
+    <p>Es gibt keinen offenen Termin. <a href="plan">Saison anlegen</a></p>
+    return;
+}
+
+@{
+    var mail = Zustand.Wochenmail(termin.Id);
+    var empfaenger = Zustand.AusgewaehlteEmpfaenger;
+    var mailto = MailtoLink(mail, empfaenger);
+}
+
+<div class="mailraster">
+    <section>
+        <h2>Termin</h2>
+        <select value="@termin.Id" @onchange="e => _terminId = int.Parse(e.Value!.ToString()!)">
+            @foreach (var t in Zustand.Plan.Chronologisch.Where(t => t.Status != TerminStatus.Durchgefuehrt))
+            {
+                <option value="@t.Id">@t.Datum.ToString("ddd dd.MM.yyyy") – Gruppe @t.Gruppe, @(Zustand.Revier(t.RevierId)?.Name)</option>
+            }
+        </select>
+
+        <h2>Text vor dem Plan</h2>
+        <textarea rows="5" @bind="Zustand.Mailvorlage.Einleitung" @bind:event="oninput" @onfocusout="Zustand.MailvorlageSpeichern"></textarea>
+
+        <h2>Gruß</h2>
+        <textarea rows="3" @bind="Zustand.Mailvorlage.Gruss" @bind:event="oninput" @onfocusout="Zustand.MailvorlageSpeichern"></textarea>
+
+        <h2>Empfänger (BCC) – @empfaenger.Count von @Zustand.Kontakte.Count</h2>
+        <div class="werkzeuge">
+            <button @onclick="AlleWaehlen">Alle</button>
+            <button @onclick="KeineWaehlen">Keine</button>
+            <button @onclick='() => NurRolle(Kontaktrolle.Ausbilder)'>Nur Ausbilder</button>
+        </div>
+        <div class="empfaenger">
+            @foreach (var k in Zustand.Kontakte)
+            {
+                var gewaehlt = !Zustand.Mailvorlage.AbgewaehlteEmpfaenger.Contains(k.EMail);
+                <label>
+                    <input type="checkbox" checked="@gewaehlt" @onchange="e => Waehlen(k, (bool)e.Value!)" />
+                    @k.Name <small>@k.EMail</small>
+                </label>
+            }
+        </div>
+    </section>
+
+    <section>
+        <h2>Vorschau</h2>
+        <div class="mailvorschau">
+            <div><b>BCC:</b> @empfaenger.Count Empfänger</div>
+            <div><b>Betreff:</b> @mail.Betreff</div>
+            <pre>@mail.Text</pre>
+        </div>
+
+        <div class="werkzeuge">
+            @if (empfaenger.Count > 0 && mailto.Length <= MailtoGrenze)
+            {
+                <a class="knopf primaer" href="@mailto">Im Mailprogramm öffnen</a>
+            }
+            <a class="knopf" href="mail/entwurf/@termin.Id" download>Als Entwurf herunterladen (.eml)</a>
+            <button @onclick='() => Kopieren(mail.Text, "Text")'>Text kopieren</button>
+            <button @onclick='() => Kopieren(string.Join("; ", empfaenger.Select(k => k.EMail)), "Empfänger")'>Empfänger kopieren</button>
+        </div>
+        @if (mailto.Length > MailtoGrenze)
+        {
+            <p class="befund gelb">
+                Die Mail ist zu lang für den direkten Aufruf des Mailprogramms. Bitte den Entwurf herunterladen
+                oder Text und Empfänger kopieren und die Empfänger ins BCC-Feld einfügen.
+            </p>
+        }
+        @if (_meldung is not null)
+        {
+            <p class="befund gruen">@_meldung</p>
+        }
+    </section>
+</div>
+
+@code {
+    /// <summary>Viele Mailprogramme schneiden mailto-Links ab etwa 2000 Zeichen ab.</summary>
+    private const int MailtoGrenze = 2000;
+
+    [SupplyParameterFromQuery(Name = "termin")] public int? TerminAusLink { get; set; }
+
+    private int? _terminId;
+    private string? _meldung;
+
+    private Termin? AktuellerTermin
+    {
+        get
+        {
+            var id = _terminId ?? TerminAusLink;
+            return (id is int i ? Zustand.Plan.Termine.FirstOrDefault(t => t.Id == i) : null) ?? Zustand.NaechsterTermin;
+        }
+    }
+
+    private static string MailtoLink(Mailinhalt mail, IReadOnlyList<Kontakt> empfaenger) =>
+        "mailto:?bcc=" + string.Join(",", empfaenger.Select(k => Uri.EscapeDataString(k.EMail)))
+        + "&subject=" + Uri.EscapeDataString(mail.Betreff)
+        + "&body=" + Uri.EscapeDataString(mail.Text.Replace("\n", "\r\n"));
+
+    private void Waehlen(Kontakt k, bool gewaehlt)
+    {
+        if (gewaehlt) Zustand.Mailvorlage.AbgewaehlteEmpfaenger.Remove(k.EMail);
+        else Zustand.Mailvorlage.AbgewaehlteEmpfaenger.Add(k.EMail);
+        Zustand.MailvorlageSpeichern();
+    }
+
+    private void AlleWaehlen()
+    {
+        Zustand.Mailvorlage.AbgewaehlteEmpfaenger.Clear();
+        Zustand.MailvorlageSpeichern();
+    }
+
+    private void KeineWaehlen()
+    {
+        foreach (var k in Zustand.Kontakte) Zustand.Mailvorlage.AbgewaehlteEmpfaenger.Add(k.EMail);
+        Zustand.MailvorlageSpeichern();
+    }
+
+    private void NurRolle(Kontaktrolle rolle)
+    {
+        Zustand.Mailvorlage.AbgewaehlteEmpfaenger.Clear();
+        foreach (var k in Zustand.Kontakte.Where(k => k.Rolle != rolle)) Zustand.Mailvorlage.AbgewaehlteEmpfaenger.Add(k.EMail);
+        Zustand.MailvorlageSpeichern();
+    }
+
+    private async Task Kopieren(string text, string was)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            _meldung = $"{was} in die Zwischenablage kopiert.";
+        }
+        catch (JSException)
+        {
+            _meldung = "Kopieren ist in diesem Browser nicht erlaubt.";
+        }
+    }
+
+    protected override void OnInitialized() => Zustand.Geaendert += Aktualisieren;
+    private void Aktualisieren() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

@@ -1,0 +1,165 @@
+@page "/kilometer"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+
+<PageTitle>km-Abrechnung</PageTitle>
+
+<h1>km-Abrechnung der Ausbilder</h1>
+
+<p class="keindruck">
+    Hin- und Rückweg je Einsatztag, @Zustand.Kurs.KmSatz.ToString("0.00") € je km. Wer an einem Tag zwei Rollen hat (z. B. Ausbilder und Prüfer), fährt nur einmal.
+    Die Strecke wird beim Erfassen des Einsatzes berechnet und höchstens 7 Tage zwischengespeichert, damit Umleitungen berücksichtigt werden,
+    soweit der Routendienst sie kennt. Eine Korrektur von Hand hat immer Vorrang.
+</p>
+
+<div class="werkzeuge keindruck">
+    <label>von <input type="date" @bind="_von" /></label>
+    <label>bis <input type="date" @bind="_bis" /></label>
+    <button disabled="@_rechnet" @onclick="() => Berechnen(false)">Fehlende km berechnen</button>
+    <button disabled="@_rechnet" @onclick="() => Berechnen(true)" title="Fragt alle noch nicht abgerechneten Strecken im Zeitraum neu ab">Alle neu berechnen</button>
+    <button onclick="window.print()">Drucken</button>
+</div>
+
+@if (_meldung is not null)
+{
+    <p class="befund gelb keindruck">@_meldung</p>
+}
+
+@{
+    var einsaetze = Zustand.Einsaetze(_von, _bis);
+    var satz = Zustand.Kurs.KmSatz;
+}
+
+@if (einsaetze.Count == 0)
+{
+    <p>Im Zeitraum sind keine Einsätze erfasst. Einsätze entstehen über die Anwesenheitslisten (Grundgehorsam, Niederwild) und die Ausbilder-Angaben auf den Terminseiten.</p>
+}
+
+@foreach (var person in einsaetze.GroupBy(e => (e.PersonId, e.Person)))
+{
+    var fahrten = person.Select(e => new Fahrt(e.Datum, e.KmBerechnet, e.KmKorrigiert, e.PersonId, e.Id)).ToList();
+    var erstattet = Kilometergeld.Erstattet(fahrten).Select(f => f.Id).ToHashSet();
+    var (km, betrag) = Kilometergeld.Summe(fahrten, satz);
+
+    <section class="abrechnung">
+        <h2>@person.Key.Person</h2>
+        <p class="nurdruck">@Zustand.Kursbezeichnung · Zeitraum @_von.ToString("dd.MM.yyyy") – @_bis.ToString("dd.MM.yyyy")</p>
+        <table class="liste">
+            <thead>
+                <tr><th>Datum</th><th>Einsatz</th><th>Ziel</th><th>km einfach</th><th>Korrektur</th><th>km gesamt</th><th>Betrag</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var e in person)
+                {
+                    var fahrt = new Fahrt(e.Datum, e.KmBerechnet, e.KmKorrigiert, e.PersonId, e.Id);
+                    var zaehlt = erstattet.Contains(e.Id);
+                    <tr class="@(zaehlt ? "" : "inaktiv")">
+                        <td>@e.Datum.ToString("ddd dd.MM.")</td>
+                        <td>@PlanungsZustand.Bezeichnung(e.Art)</td>
+                        <td>@e.Ziel</td>
+                        <td class="zahl">
+                            @(e.KmBerechnet is double b ? b.ToString("0.0") : "–")
+                            @if (e.KmBerechnetAm is DateTimeOffset am) { <br /><small class="keindruck">berechnet @am.ToLocalTime().ToString("dd.MM.")</small> }
+                        </td>
+                        <td>
+                            @if (_bearbeitet == e.Id)
+                            {
+                                <span class="keindruck">
+                                    <input type="number" step="0.1" min="0" style="width:6rem" @bind="_korrekturKm" placeholder="km einfach" />
+                                    <input @bind="_korrekturText" placeholder="Grund, z. B. Umleitung" />
+                                    <button class="primaer" @onclick="() => KorrekturSpeichern(e)">OK</button>
+                                    <button @onclick="() => _bearbeitet = null">×</button>
+                                </span>
+                            }
+                            else
+                            {
+                                @(e.KmKorrigiert is double k ? $"{k:0.0}" : "")
+                                @if (!string.IsNullOrEmpty(e.Bemerkung)) { <small> (@e.Bemerkung)</small> }
+                                @if (!e.Abgeschlossen)
+                                {
+                                    <button class="klein keindruck" @onclick="() => Bearbeiten(e)">ändern</button>
+                                }
+                            }
+                        </td>
+                        @if (zaehlt)
+                        {
+                            <td class="zahl">@fahrt.KmGesamt.ToString("0.0")</td>
+                            <td class="zahl">@Kilometergeld.Betrag(fahrt.KmGesamt, satz).ToString("0.00") €</td>
+                        }
+                        else
+                        {
+                            <td colspan="2"><small>gleiche Fahrt (Doppelrolle)</small></td>
+                        }
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr><th colspan="5">Summe (@erstattet.Count Fahrten)</th><th class="zahl">@km.ToString("0.0")</th><th class="zahl">@betrag.ToString("0.00") €</th></tr>
+            </tfoot>
+        </table>
+        <p class="unterschrift nurdruck">Datum, Unterschrift: ______________________________</p>
+    </section>
+}
+
+@if (einsaetze.Count > 0)
+{
+    var gesamt = Kilometergeld.Summe(einsaetze.Select(e => new Fahrt(e.Datum, e.KmBerechnet, e.KmKorrigiert, e.PersonId, e.Id)), satz);
+    <p class="gesamtsumme">Gesamt für den Verein: @gesamt.Km.ToString("0.0") km · @gesamt.Betrag.ToString("0.00") €</p>
+}
+
+@code {
+    private DateOnly _von, _bis;
+    private int? _bearbeitet;
+    private double? _korrekturKm;
+    private string? _korrekturText;
+    private string? _meldung;
+    private bool _rechnet;
+
+    protected override void OnInitialized()
+    {
+        var jahr = Zustand.Kurs.Jahr ?? DateTime.Today.Year;
+        _von = new DateOnly(jahr, 1, 1);
+        _bis = new DateOnly(jahr, 12, 31);
+        Zustand.Geaendert += Aktualisieren;
+    }
+
+    private void Bearbeiten(EinsatzZeile e)
+    {
+        _bearbeitet = e.Id;
+        _korrekturKm = e.KmKorrigiert;
+        _korrekturText = e.Bemerkung;
+    }
+
+    private void KorrekturSpeichern(EinsatzZeile e)
+    {
+        try
+        {
+            Zustand.EinsatzKorrigieren(e, _korrekturKm, _korrekturText);
+            _bearbeitet = null;
+            _meldung = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _meldung = ex.Message;
+        }
+    }
+
+    private async Task Berechnen(bool alle)
+    {
+        _rechnet = true;
+        try
+        {
+            var ids = alle
+                ? Zustand.Einsaetze(_von, _bis).Where(e => !e.Abgeschlossen).Select(e => e.Id).ToList()
+                : Zustand.Einsaetze(_von, _bis).Where(e => e.KmBerechnet is null && !e.Abgeschlossen).Select(e => e.Id).ToList();
+            _meldung = await Zustand.KmBerechnen(ids, neuBerechnen: alle) ?? (ids.Count == 0 ? "Nichts zu berechnen." : "Fertig.");
+        }
+        finally
+        {
+            _rechnet = false;
+        }
+    }
+
+    private void Aktualisieren() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

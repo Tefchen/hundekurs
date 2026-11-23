@@ -1,0 +1,33 @@
+@inherits LayoutComponentBase
+@inject PlanungsZustand Zustand
+
+<header class="kopf keindruck">
+    <a class="marke" href="">Hundekurs</a>
+    <nav>
+        <NavLink href="" Match="NavLinkMatch.All">Übersicht</NavLink>
+        <NavLink href="gehorsam">Gehorsam</NavLink>
+        <NavLink href="plan">Schweißplan</NavLink>
+        <NavLink href="apportierarbeit">Niederwild</NavLink>
+        <NavLink href="teilnehmer">Teilnehmer</NavLink>
+        <NavLink href="gebuehren">Gebühren</NavLink>
+        <NavLink href="auslagen">Auslagen</NavLink>
+        <NavLink href="personen">Personen</NavLink>
+        <NavLink href="hunde">Hunde</NavLink>
+        <NavLink href="wochenmail">Wochenmail</NavLink>
+        <NavLink href="kilometer">km</NavLink>
+        <NavLink href="reviere">Reviere</NavLink>
+        <NavLink href="einstellungen">Einstellungen</NavLink>
+        <NavLink href="historie">Historie</NavLink>
+    </nav>
+    <span class="hinweis">@Zustand.Kursbezeichnung · @(Zustand.Info.Demodaten ? "Demodaten" : "echte Daten") · lokal</span>
+</header>
+
+<main>
+    @Body
+</main>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Es ist ein Fehler aufgetreten.
+    <a href="." class="reload">Neu laden</a>
+    <span class="dismiss">🗙</span>
+</div>

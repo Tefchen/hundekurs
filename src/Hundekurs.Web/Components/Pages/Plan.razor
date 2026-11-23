@@ -1,0 +1,101 @@
+@page "/plan"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+
+<PageTitle>Schweißplan</PageTitle>
+
+<h1>Schweißplan der Saison</h1>
+
+<div class="werkzeuge keindruck">
+    <a href="einstellungen">Kursjahr anlegen …</a>
+    <span class="trenner"></span>
+    <button @onclick="() => Zustand.NeuPlanen(false)" title="Behält gültige Reviere, Helfer und Fährten bei">Plan aktualisieren</button>
+    <button @onclick="() => Zustand.NeuPlanen(true)" title="Berechnet alle geplanten Termine ab heute neu">Vollständig neu berechnen</button>
+    <button onclick="window.print()">Drucken</button>
+</div>
+
+@if (Zustand.Gespanne.Count == 0)
+{
+    <p class="befund gelb">Für die Planung werden Teilnehmer mit Gruppe A oder B gebraucht. <a href="teilnehmer">Teilnehmer anlegen</a></p>
+}
+
+@{
+    var plan = Zustand.Plan;
+    var termine = plan.Chronologisch.ToList();
+    var befunde = Zustand.Befunde;
+}
+
+<div class="tabellenrahmen">
+<table class="matrix">
+    <thead>
+        <tr>
+            <th>Gespann</th>
+            @foreach (var t in termine)
+            {
+                var hatFehler = befunde.Any(b => b.TerminId == t.Id && b.Schwere == Schwere.Fehler);
+                <th class="@(hatFehler ? "rot" : "")">
+                    <a href="termin/@t.Id">@t.Datum.ToString("dd.MM.")</a><br />
+                    <small>@t.Gruppe · @(Zustand.Revier(t.RevierId)?.Kuerzel ?? "?")@(t.RevierFixiert ? "*" : "")</small><br />
+                    <small class="status">@Status(t.Status)</small>
+                </th>
+            }
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var gruppe in Zustand.Gespanne.GroupBy(g => g.Gruppe))
+        {
+            <tr class="gruppenzeile"><td colspan="@(termine.Count + 1)">Gruppe @gruppe.Key</td></tr>
+            @foreach (var g in gruppe)
+            {
+                <tr>
+                    <td class="name">@g.Fuehrer<br /><small>@g.Hund</small></td>
+                    @foreach (var t in termine)
+                    {
+                        var (text, klasse) = Zelle(t, g);
+                        var fehler = befunde.Any(b => b.TerminId == t.Id && b.GespannId == g.Id && b.Schwere == Schwere.Fehler);
+                        <td class="@klasse @(fehler ? "rot" : "")">@text</td>
+                    }
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+</div>
+
+<p class="legende">
+    <b>N3</b> = Revier-Kürzel und Fährte · <b>²</b> = zweiter Lauf auf der doppelten Fährte · <b>H</b> = Helferdienst ·
+    <b>ab</b> = abgemeldet · <b>*</b> = Revier von Hand festgelegt · <span class="ist">kursiv</span> = tatsächlich gelaufen
+</p>
+
+<Befundliste Befunde="befunde" />
+
+@code {
+    private (string Text, string Klasse) Zelle(Termin t, Gespann g)
+    {
+        var kuerzel = Zustand.Revier(t.RevierId)?.Kuerzel ?? "";
+        if (t.Abgemeldet.Contains(g.Id)) return ("ab", "ab");
+        if (t.Status == TerminStatus.Durchgefuehrt)
+        {
+            var lauf = t.Ist.FirstOrDefault(l => l.GespannId == g.Id);
+            if (lauf is not null)
+                return ($"{kuerzel}{lauf.FaehrteNr}{(lauf.Ergebnis == LaufErgebnis.Abbruch ? " A" : lauf.Ergebnis == LaufErgebnis.NichtAngetreten ? " –" : "")}", "ist");
+            return (t.Helfer.Contains(g.Id) ? "H" : "", t.Helfer.Contains(g.Id) ? "helfer" : "");
+        }
+        var z = t.Zuteilungen.FirstOrDefault(x => x.GespannId == g.Id);
+        var helfer = t.Helfer.Contains(g.Id);
+        if (z is not null) return ($"{kuerzel}{z.FaehrteNr}{(z.ZweiterLaufAufFaehrte ? "²" : "")}{(helfer ? " H" : "")}", t.Gaeste.Contains(g.Id) ? "gast" : "");
+        if (helfer) return ("H", "helfer");
+        return ("", t.Gruppe == g.Gruppe ? "" : "andere");
+    }
+
+    private static string Status(TerminStatus s) => s switch
+    {
+        TerminStatus.Geplant => "geplant",
+        TerminStatus.Veroeffentlicht => "veröffentlicht",
+        _ => "durchgeführt",
+    };
+
+    protected override void OnInitialized() => Zustand.Geaendert += Aktualisieren;
+    private void Aktualisieren() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

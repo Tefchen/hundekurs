@@ -1,0 +1,17 @@
+@if (Befunde.Count == 0)
+{
+    <p class="befund gruen">Keine Regelverstöße.</p>
+}
+else
+{
+    <ul class="befunde">
+        @foreach (var b in Befunde.OrderBy(b => b.Schwere))
+        {
+            <li class="befund @(b.Schwere == Schwere.Fehler ? "rot" : "gelb")">@b.Text</li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<Befund> Befunde { get; set; } = [];
+}

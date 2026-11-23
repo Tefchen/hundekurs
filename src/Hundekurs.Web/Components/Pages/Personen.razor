@@ -1,0 +1,192 @@
+@page "/personen"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+
+<PageTitle>Personen</PageTitle>
+
+<h1>Personen</h1>
+
+<p>
+    Hundeführer, Eigentümer, Ausbilder und Prüfer. Eine Person kann mehrere Rollen haben und mit mehreren Hunden verknüpft sein.
+    Die Adresse von Ausbildern und Prüfern ist Startpunkt der km-Berechnung; an den Routendienst geht nur die Adresse, kein Name.
+</p>
+
+<div class="werkzeuge keindruck">
+    <label>Suche <input @bind="_suche" @bind:event="oninput" placeholder="Name, Ort, Hund …" /></label>
+    <label><input type="checkbox" @bind="_nurAusbilder" /> nur Ausbilder und Prüfer</label>
+    <button @onclick="Neu">Neue Person</button>
+</div>
+
+@if (_f is not null)
+{
+    <section class="formular keindruck">
+        <h2>@(_f.Id is null ? "Neue Person" : "Person bearbeiten")</h2>
+        <div class="felder">
+            <label>
+                Anrede
+                <select @bind="_f.Anrede">
+                    <option value="@Anrede.KeineAngabe">–</option>
+                    <option value="@Anrede.Herr">Herr</option>
+                    <option value="@Anrede.Frau">Frau</option>
+                    <option value="@Anrede.Divers">divers</option>
+                </select>
+            </label>
+            <label>Titel <input @bind="_f.Titel" size="6" placeholder="z. B. Dr." /></label>
+            <label>Vorname <input @bind="_f.Vorname" /></label>
+            <label>Nachname <input @bind="_f.Nachname" /></label>
+            <label>Straße <input @bind="_f.Strasse" /></label>
+            <label>PLZ <input @bind="_f.Plz" size="6" /></label>
+            <label>Ort <input @bind="_f.Ort" /></label>
+            <label>Telefon <input type="tel" @bind="_f.Telefon" /></label>
+            <label>E-Mail <input type="email" @bind="_f.EMail" /></label>
+        </div>
+        <div class="reihe">
+            <label><input type="checkbox" @bind="_f.Vereinsmitglied" /> Vereinsmitglied</label>
+            <label><input type="checkbox" @bind="_f.Ausbilder" /> Ausbilder im Kurs</label>
+            <label><input type="checkbox" @bind="_f.Pruefer" /> Prüfer</label>
+        </div>
+        <p class="legende">Doppelrollen sind möglich. Bei der km-Abrechnung zählt je Tag nur eine Fahrt.</p>
+        <div class="werkzeuge">
+            <button class="primaer" @onclick="Speichern">Speichern</button>
+            <button @onclick="() => { _f = null; _meldung = null; }">Abbrechen</button>
+        </div>
+    </section>
+}
+
+@if (_meldung is not null)
+{
+    <p class="befund rot">@_meldung</p>
+}
+
+<table class="liste">
+    <thead><tr><th>Name</th><th>Rollen</th><th>Hunde</th><th>Adresse</th><th>Telefon</th><th>E-Mail</th><th class="keindruck"></th></tr></thead>
+    <tbody>
+        @foreach (var p in Gefiltert())
+        {
+            <tr>
+                <td>@p.Anzeigename @if (p.Anrede != Anrede.KeineAngabe) { <small class="legende">(@(p.Anrede == Anrede.Divers ? "d" : p.Anrede == Anrede.Frau ? "w" : "m"))</small> }</td>
+                <td>
+                    @if (p.Vereinsmitglied) { <span class="etikett grau">Mitglied</span> }
+                    @if (p.Ausbilder) { <span class="etikett">Ausbilder</span> }
+                    @if (p.Pruefer) { <span class="etikett">Prüfer</span> }
+                    @if (_fuehrer.Contains(p.Id!.Value)) { <span class="etikett grau">Hundeführer</span> }
+                </td>
+                <td>@string.Join(", ", p.Hunde ?? [])</td>
+                <td>
+                    @p.Strasse@(p.Ort is not null ? $", {p.Plz} {p.Ort}" : "")
+                    @if ((p.Ausbilder || p.Pruefer) && p.Ort is not null && !p.HatKoordinaten)
+                    {
+                        <br /><small class="legende">wird bei der nächsten km-Berechnung gesucht</small>
+                    }
+                </td>
+                <td>@p.Telefon</td>
+                <td>@p.EMail</td>
+                <td class="keindruck">
+                    <button @onclick="() => Bearbeiten(p)">Bearbeiten</button>
+                    @if (_loeschen == p.Id)
+                    {
+                        <button class="gefahr" @onclick="() => Loeschen(p)">Wirklich löschen</button>
+                        <button @onclick="() => _loeschen = null">Nein</button>
+                    }
+                    else
+                    {
+                        <button @onclick="() => _loeschen = p.Id">Löschen</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+<p class="legende">Löschen geht nur, wenn die Person in keinem Kurs angemeldet ist, keine Rolle hat und keine Einsätze (km) erfasst sind.</p>
+
+@code {
+    private sealed class Formular
+    {
+        public int? Id { get; init; }
+        public Anrede Anrede { get; set; }
+        public string? Titel { get; set; }
+        public string Vorname { get; set; } = "";
+        public string Nachname { get; set; } = "";
+        public string? Strasse { get; set; }
+        public string? Plz { get; set; }
+        public string? Ort { get; set; }
+        public string? Telefon { get; set; }
+        public string? EMail { get; set; }
+        public bool Vereinsmitglied { get; set; }
+        public bool Ausbilder { get; set; }
+        public bool Pruefer { get; set; }
+    }
+
+    private List<PersonDaten> _personen = [];
+    private HashSet<int> _fuehrer = [];
+    private Formular? _f;
+    private string _suche = "";
+    private bool _nurAusbilder;
+    private int? _loeschen;
+    private string? _meldung;
+
+    private IEnumerable<PersonDaten> Gefiltert() => _personen
+        .Where(p => !_nurAusbilder || p.Ausbilder || p.Pruefer)
+        .Where(p => string.IsNullOrWhiteSpace(_suche)
+            || $"{p.Vorname} {p.Nachname} {p.Ort} {p.EMail} {string.Join(" ", p.Hunde ?? [])}".Contains(_suche.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private void Laden()
+    {
+        _personen = Zustand.Personen();
+        _fuehrer = Zustand.Teilnehmer().Where(t => t.FuehrerId is not null).Select(t => t.FuehrerId!.Value).ToHashSet();
+    }
+
+    private void Neu()
+    {
+        _f = new Formular();
+        _meldung = null;
+    }
+
+    private void Bearbeiten(PersonDaten p)
+    {
+        _f = new Formular
+        {
+            Id = p.Id, Anrede = p.Anrede, Titel = p.Titel, Vorname = p.Vorname, Nachname = p.Nachname, Strasse = p.Strasse, Plz = p.Plz, Ort = p.Ort,
+            Telefon = p.Telefon, EMail = p.EMail, Vereinsmitglied = p.Vereinsmitglied, Ausbilder = p.Ausbilder, Pruefer = p.Pruefer,
+        };
+        _meldung = null;
+    }
+
+    private void Speichern()
+    {
+        if (_f is null) return;
+        var f = _f;
+        Ausfuehren(() => Zustand.PersonSpeichern(new PersonDaten(f.Id, f.Vorname, f.Nachname, f.Strasse, f.Plz, f.Ort, f.Telefon, f.EMail,
+            f.Vereinsmitglied, f.Ausbilder, f.Pruefer, Anrede: f.Anrede, Titel: f.Titel)));
+        if (_meldung is null) _f = null;
+    }
+
+    private void Loeschen(PersonDaten p)
+    {
+        Ausfuehren(() => Zustand.PersonLoeschen(p));
+        _loeschen = null;
+    }
+
+    private void Ausfuehren(Action aktion)
+    {
+        try
+        {
+            aktion();
+            _meldung = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _meldung = ex.Message;
+        }
+        Laden();
+    }
+
+    protected override void OnInitialized()
+    {
+        Laden();
+        Zustand.Geaendert += Aktualisieren;
+    }
+
+    private void Aktualisieren() => InvokeAsync(() => { Laden(); StateHasChanged(); });
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

@@ -1,0 +1,371 @@
+@page "/teilnehmer"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+
+<PageTitle>Teilnehmer</PageTitle>
+
+<h1>Teilnehmer</h1>
+
+<p>
+    Zivil ist, wer nur Grundgehorsam macht; jagdlich, wer eine Nachsuche wählt. Nur Gespanne mit Gruppe A oder B kommen in die Schweißplanung.
+    Spalte „Teil 1“: Anwesenheit an den stattgefundenen Gehorsams-Sonntagen, nur wo die 60-%-Regel gilt
+    (grün = erreicht, gelb = noch erreichbar, rot = nicht mehr erreichbar).
+</p>
+
+<table class="liste">
+    <thead>
+        <tr><th>Gruppe</th><th>Hundeführer</th><th>Hund</th><th>Ausbildung</th><th>Teil 1</th><th class="zahl">Gebühr</th><th>E-Mail</th><th>Telefon</th><th class="keindruck"></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var t in _teilnehmer)
+        {
+            var gebuehr = Zustand.Gebuehr(t);
+            <tr>
+                <td>@(t.Gruppe?.ToString() ?? "–")</td>
+                <td>@t.Vorname @t.Nachname @if (t.Vereinsmitglied) { <span class="etikett grau" title="Vereinsmitglied">M</span> }</td>
+                <td>@t.Hund @if (t.BrauchbarkeitBestanden) { <span class="etikett" title="Brauchbarkeit bestanden">BP</span> }</td>
+                <td>
+                    <span class="etikett @(t.Ausbildung.Jagdlich ? "" : "grau")">@(t.Ausbildung.Jagdlich ? "jagdlich" : "zivil")</span>
+                    @t.Ausbildung.Text
+                </td>
+                <td>
+                    @if (!t.Ausbildung.ZulassungErforderlich)
+                    {
+                        <small class="legende">@(t.Ausbildung.Jagdlich ? "befreit (BP)" : "keine Pflicht")</small>
+                    }
+                    else if (_zulassung.TryGetValue(t.KursteilnahmeId!.Value, out var z) && z.Termine > 0)
+                    {
+                        <span class="ampel @z.Ampel.ToString().ToLowerInvariant()" title="nötig: @z.Erforderlich von @z.Termine">@z.Anwesend / @z.Stattgefunden</span>
+                    }
+                    @if (t.ZulassungAusnahme)
+                    {
+                        <span class="ampel gruen" title="@t.ZulassungBegruendung">Ausnahme</span>
+                    }
+                </td>
+                <td class="zahl" title="@gebuehr.Rechenweg">
+                    @(gebuehr.Betrag is decimal b ? Gebuehrenregel.Euro(b) : "?")
+                    @if (t.Wiederholer) { <span class="etikett grau" title="Wiederholer">W</span> }
+                    @if (t.BezahltAm is not null) { <span class="etikett" title="bezahlt am @t.BezahltAm?.ToString("dd.MM.yyyy")">✓</span> }
+                </td>
+                <td>@t.EMail</td>
+                <td>@t.Telefon</td>
+                <td class="keindruck">
+                    <button @onclick="() => Bearbeiten(t)">Bearbeiten</button>
+                    @if (_loeschen == t.KursteilnahmeId)
+                    {
+                        <button class="gefahr" @onclick="() => Loeschen(t.KursteilnahmeId!.Value)">Wirklich abmelden</button>
+                        <button @onclick="() => _loeschen = null">Nein</button>
+                    }
+                    else
+                    {
+                        <button @onclick="() => _loeschen = t.KursteilnahmeId">Abmelden</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+<p class="legende">
+    @_teilnehmer.Count Gespanne (@_teilnehmer.Count(t => t.Ausbildung.Jagdlich) jagdlich, @_teilnehmer.Count(t => !t.Ausbildung.Jagdlich) zivil)
+    · Gruppe A: @_teilnehmer.Count(t => t.Gruppe == Gruppe.A) · Gruppe B: @_teilnehmer.Count(t => t.Gruppe == Gruppe.B)
+    · M = Vereinsmitglied, W = Wiederholer, BP = Brauchbarkeit bestanden, ✓ = bezahlt.
+    Abmelden entfernt das Gespann samt Einteilungen und gelaufenen Fährten aus dem Kurs; Person und Hund bleiben gespeichert.
+</p>
+
+<div class="werkzeuge keindruck">
+    <button @onclick="Neu">Neues Gespann</button>
+    <a href="personen">Ausbilder und Prüfer: unter Personen</a>
+</div>
+
+@if (_f is not null)
+{
+    var hund = _hunde.FirstOrDefault(h => h.Id == _f.HundId);
+    var ausbildung = Ausbildung();
+    var vorschau = Zustand.Gebuehr(Daten());
+
+    <section class="formular keindruck">
+        <h2>@(_f.KursteilnahmeId is null ? "Neues Gespann" : "Gespann bearbeiten")</h2>
+
+        <fieldset>
+            <legend>Hundeführer</legend>
+            <div class="felder">
+                <label>
+                    Person
+                    <select value="@_f.FuehrerId" @onchange="e => PersonWaehlen(e.Value?.ToString())">
+                        <option value="0">– neue Person –</option>
+                        @foreach (var p in _personen)
+                        {
+                            <option value="@p.Id">@p.Anzeigename</option>
+                        }
+                    </select>
+                </label>
+                <label>Vorname <input @bind="_f.Vorname" /></label>
+                <label>Nachname <input @bind="_f.Nachname" /></label>
+                <label>E-Mail <input type="email" @bind="_f.EMail" /></label>
+                <label>Telefon <input type="tel" @bind="_f.Telefon" /></label>
+                <label><input type="checkbox" @bind="_f.Vereinsmitglied" /> Vereinsmitglied</label>
+            </div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Hund</legend>
+            <div class="felder">
+                <label>
+                    Hund
+                    <select value="@_f.HundId" @onchange="e => HundWaehlen(e.Value?.ToString())">
+                        <option value="0">– neuer Hund –</option>
+                        @foreach (var h in _hunde)
+                        {
+                            <option value="@h.Id">@h.Rufname@(h.Rasse is null ? "" : $" ({h.Rasse})")</option>
+                        }
+                    </select>
+                </label>
+                <label>Rufname <input @bind="_f.Hund" /></label>
+            </div>
+            @if (hund is not null && hund.Brauchbarkeiten.Count > 0)
+            {
+                <p class="legende">
+                    Brauchbarkeit bestanden:
+                    @string.Join("; ", hund.Brauchbarkeiten.Select(b => $"{b.Datum:dd.MM.yyyy}{(b.Ort is null ? "" : $" in {b.Ort}")} ({Zustand.FaecherText(b.FachIds)})"))
+                </p>
+            }
+            <p class="legende">Chipnummer, Rasse, Eigentümer und Brauchbarkeit pflegst du unter <a href="hunde">Hunde</a>.</p>
+        </fieldset>
+
+        <fieldset>
+            <legend>Ausbildung</legend>
+            <div class="reihe">
+                <label title="@(ausbildung.Teil1Pflicht ? "Pflicht für die jagdliche Ausbildung" : "")">
+                    <input type="checkbox" @bind="_f.Gehorsam" disabled="@ausbildung.Teil1Pflicht" />
+                    Grundgehorsam (Teil 1)@(ausbildung.Teil1Pflicht ? " – Pflicht" : "")
+                </label>
+                <label><input type="checkbox" @bind="_f.Schalenwild" /> Nachsuche auf Schalenwild</label>
+                <label><input type="checkbox" @bind="_f.Niederwild" /> Nachsuche auf Niederwild</label>
+                <label>
+                    Schweißgruppe
+                    <select @bind="_f.GruppeText" disabled="@(!_f.Schalenwild)">
+                        <option value="">keine</option>
+                        <option value="A">A</option>
+                        <option value="B">B</option>
+                    </select>
+                </label>
+            </div>
+            <p class="legende">
+                @(ausbildung.Jagdlich ? "Jagdlich" : "Zivil").
+                @if (ausbildung.Niederwild && !ausbildung.Schalenwild && _brauchbar)
+                {
+                    <text>Mit bestandener Brauchbarkeit entfallen Teil 1 und die übrigen Fächer.</text>
+                }
+                else if (ausbildung.ZulassungErforderlich)
+                {
+                    <text>Für Teil 2 sind mindestens 60 % Anwesenheit an den stattgefundenen Gehorsams-Sonntagen nötig.</text>
+                }
+                else
+                {
+                    <text>Keine Anwesenheitspflicht.</text>
+                }
+            </p>
+            @if (ausbildung.ZulassungErforderlich)
+            {
+                <div class="felder">
+                    <label><input type="checkbox" @bind="_f.ZulassungAusnahme" /> Zulassung zu Teil 2 als Ausnahme</label>
+                    @if (_f.ZulassungAusnahme)
+                    {
+                        <label>Begründung (wird in der Historie festgehalten) <input @bind="_f.ZulassungBegruendung" /></label>
+                    }
+                </div>
+            }
+        </fieldset>
+
+        <fieldset>
+            <legend>Kursgebühr</legend>
+            <div class="reihe">
+                <label>
+                    <input type="checkbox" @bind="_f.Wiederholer" /> Wiederholer (halbe Gebühr)
+                    @if (_schonImKurs) { <small class="legende"> – der Hund war schon in einem früheren Kurs</small> }
+                </label>
+                <label><input type="checkbox" @bind="_f.VonHand" /> Betrag von Hand</label>
+                @if (_f.VonHand)
+                {
+                    <label>Betrag (€) <input type="number" step="0.01" min="0" style="width:7rem" @bind="_f.Betrag" /></label>
+                    <label>Grund <input @bind="_f.Hinweis" placeholder="z. B. Absprache Vorstand" /></label>
+                }
+            </div>
+            <p class="gebuehr">
+                Zu zahlen: @(vorschau.Betrag is decimal b ? Gebuehrenregel.Euro(b) : "–")
+                <small>(@vorschau.Rechenweg)</small>
+            </p>
+            @if (!vorschau.Ermittelt)
+            {
+                <p class="befund gelb">Für diese Kombination ist noch kein Preis hinterlegt – unter <a href="gebuehren">Gebühren</a> ergänzen oder Betrag von Hand eintragen.</p>
+            }
+        </fieldset>
+
+        <div class="werkzeuge">
+            <button class="primaer" @onclick="Speichern">Speichern</button>
+            <button @onclick="() => { _f = null; _meldung = null; }">Abbrechen</button>
+        </div>
+    </section>
+}
+
+@if (_meldung is not null)
+{
+    <p class="befund rot">@_meldung</p>
+}
+
+@code {
+    private sealed class Formular
+    {
+        public int? KursteilnahmeId { get; init; }
+        public int FuehrerId { get; set; }
+        public int HundId { get; set; }
+        public string Vorname { get; set; } = "";
+        public string Nachname { get; set; } = "";
+        public string? EMail { get; set; }
+        public string? Telefon { get; set; }
+        public bool Vereinsmitglied { get; set; }
+        public string Hund { get; set; } = "";
+        public string GruppeText { get; set; } = "";
+        public bool Gehorsam { get; set; } = true;
+        public bool Schalenwild { get; set; }
+        public bool Niederwild { get; set; }
+        public bool ZulassungAusnahme { get; set; }
+        public string? ZulassungBegruendung { get; set; }
+        public bool Wiederholer { get; set; }
+        public bool VonHand { get; set; }
+        public decimal? Betrag { get; set; }
+        public string? Hinweis { get; set; }
+        public DateOnly? BezahltAm { get; set; }
+    }
+
+    private Dictionary<int, Zulassungsstand> _zulassung = [];
+    private List<TeilnehmerDaten> _teilnehmer = [];
+    private List<PersonDaten> _personen = [];
+    private List<HundDaten> _hunde = [];
+    private Formular? _f;
+    private bool _brauchbar, _schonImKurs;
+    private int? _loeschen;
+    private string? _meldung;
+
+    private void Laden()
+    {
+        _teilnehmer = Zustand.Teilnehmer();
+        _zulassung = Zustand.Zulassungen();
+        _personen = Zustand.Personen();
+        _hunde = Zustand.Hunde();
+    }
+
+    private Ausbildung Ausbildung() => new(_f!.Gehorsam, _f.Schalenwild, _f.Niederwild, _brauchbar);
+
+    private TeilnehmerDaten Daten()
+    {
+        var f = _f!;
+        var a = Ausbildung().Bereinigt();
+        Gruppe? gruppe = f.Schalenwild ? f.GruppeText switch { "A" => Gruppe.A, "B" => Gruppe.B, _ => null } : null;
+        return new TeilnehmerDaten(f.KursteilnahmeId, f.Vorname, f.Nachname, f.EMail, f.Telefon, f.Hund, gruppe,
+            a.Gehorsam, a.Schalenwild, a.Niederwild, f.ZulassungAusnahme && a.ZulassungErforderlich, f.ZulassungBegruendung,
+            f.Wiederholer, f.VonHand ? f.Betrag ?? 0 : null, f.VonHand ? f.Hinweis : null, f.BezahltAm,
+            f.FuehrerId == 0 ? null : f.FuehrerId, f.HundId == 0 ? null : f.HundId,
+            f.Vereinsmitglied, _brauchbar, _schonImKurs);
+    }
+
+    private void Neu()
+    {
+        _f = new Formular();
+        _brauchbar = _schonImKurs = false;
+        _meldung = null;
+    }
+
+    private void Bearbeiten(TeilnehmerDaten t)
+    {
+        _f = new Formular
+        {
+            KursteilnahmeId = t.KursteilnahmeId,
+            FuehrerId = t.FuehrerId ?? 0,
+            HundId = t.HundId ?? 0,
+            Vorname = t.Vorname,
+            Nachname = t.Nachname,
+            EMail = t.EMail,
+            Telefon = t.Telefon,
+            Vereinsmitglied = t.Vereinsmitglied,
+            Hund = t.Hund,
+            GruppeText = t.Gruppe?.ToString() ?? "",
+            Gehorsam = t.Gehorsam,
+            Schalenwild = t.Schalenwild,
+            Niederwild = t.Niederwild,
+            ZulassungAusnahme = t.ZulassungAusnahme,
+            ZulassungBegruendung = t.ZulassungBegruendung,
+            Wiederholer = t.Wiederholer,
+            VonHand = t.GebuehrVonHand is not null,
+            Betrag = t.GebuehrVonHand,
+            Hinweis = t.GebuehrHinweis,
+            BezahltAm = t.BezahltAm,
+        };
+        _brauchbar = t.BrauchbarkeitBestanden;
+        _schonImKurs = t.SchonImKurs;
+        _meldung = null;
+    }
+
+    private void PersonWaehlen(string? wert)
+    {
+        _f!.FuehrerId = int.TryParse(wert, out var id) ? id : 0;
+        var p = _personen.FirstOrDefault(x => x.Id == _f.FuehrerId);
+        _f.Vorname = p?.Vorname ?? "";
+        _f.Nachname = p?.Nachname ?? "";
+        _f.EMail = p?.EMail;
+        _f.Telefon = p?.Telefon;
+        _f.Vereinsmitglied = p?.Vereinsmitglied ?? false;
+        // Hund vorschlagen, den die Person führt
+        if (_f.HundId == 0 && _hunde.FirstOrDefault(h => h.FuehrerId == _f.FuehrerId) is { } hund) HundWaehlen(hund.Id.ToString());
+    }
+
+    private void HundWaehlen(string? wert)
+    {
+        _f!.HundId = int.TryParse(wert, out var id) ? id : 0;
+        var h = _hunde.FirstOrDefault(x => x.Id == _f.HundId);
+        _f.Hund = h?.Rufname ?? "";
+        _brauchbar = h?.Brauchbarkeiten.Count > 0;
+        _schonImKurs = false; // ergibt sich nach dem Speichern aus früheren Kursen
+    }
+
+    private void Speichern()
+    {
+        if (_f is null) return;
+        if (_f.VonHand && _f.Betrag is null)
+        {
+            _meldung = "Bitte den Betrag eintragen oder „Betrag von Hand“ abwählen.";
+            return;
+        }
+        Ausfuehren(() => Zustand.TeilnehmerSpeichern(Daten()));
+        if (_meldung is null) _f = null;
+    }
+
+    private void Loeschen(int id)
+    {
+        Ausfuehren(() => Zustand.TeilnehmerLoeschen(id));
+        _loeschen = null;
+    }
+
+    private void Ausfuehren(Action aktion)
+    {
+        try
+        {
+            aktion();
+            _meldung = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _meldung = ex.Message;
+        }
+        Laden();
+    }
+
+    protected override void OnInitialized()
+    {
+        Laden();
+        Zustand.Geaendert += Aktualisieren;
+    }
+
+    private void Aktualisieren() => InvokeAsync(() => { Laden(); StateHasChanged(); });
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

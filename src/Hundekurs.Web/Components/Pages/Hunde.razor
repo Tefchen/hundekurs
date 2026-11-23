@@ -1,0 +1,243 @@
+@page "/hunde"
+@implements IDisposable
+@inject PlanungsZustand Zustand
+
+<PageTitle>Hunde</PageTitle>
+
+<h1>Hunde</h1>
+
+<p>
+    Hundeführer und Eigentümer sind Personen; ein Hund kann von verschiedenen Personen geführt werden.
+    Eine bestandene Brauchbarkeit befreit bei reiner Nachsuche auf Niederwild von Teil 1 und den übrigen Fächern – nicht bei Schalenwild.
+</p>
+
+<div class="werkzeuge keindruck">
+    <label>Suche <input @bind="_suche" @bind:event="oninput" placeholder="Name, Chip, Rasse …" /></label>
+    <button @onclick="Neu">Neuer Hund</button>
+</div>
+
+@if (_f is not null)
+{
+    <section class="formular keindruck">
+        <h2>@(_f.Id is null ? "Neuer Hund" : $"{_f.Rufname} bearbeiten")</h2>
+        <div class="felder">
+            <label>Rufname <input @bind="_f.Rufname" /></label>
+            <label>Zuchtbuchname <input @bind="_f.Zuchtbuchname" /></label>
+            <label>
+                Rasse
+                <input list="rassen" @bind="_f.Rasse" />
+                <datalist id="rassen">
+                    @foreach (var r in _rassen) { <option value="@r"></option> }
+                </datalist>
+            </label>
+            <label>Wurfdatum <input type="date" @bind="_f.Wurfdatum" /></label>
+            <label>
+                Geschlecht
+                <select @bind="_f.GeschlechtText">
+                    <option value="">–</option>
+                    <option value="@Geschlecht.Ruede">Rüde</option>
+                    <option value="@Geschlecht.Huendin">Hündin</option>
+                </select>
+            </label>
+            <label>Chipnummer <input @bind="_f.Chip" /></label>
+            <label>Zuchtbuchnummer <input @bind="_f.Zuchtbuchnummer" /></label>
+            <label>Heimtierausweis <input @bind="_f.Heimtierausweis" /></label>
+            <label>
+                Hundeführer
+                <select @bind="_f.FuehrerId">
+                    <option value="0">–</option>
+                    @foreach (var p in _personen) { <option value="@p.Id">@p.Anzeigename</option> }
+                </select>
+            </label>
+            <label>
+                Eigentümer
+                <select @bind="_f.EigentuemerId">
+                    <option value="0">wie Hundeführer</option>
+                    @foreach (var p in _personen) { <option value="@p.Id">@p.Anzeigename</option> }
+                </select>
+            </label>
+            <label>Bemerkung <input @bind="_f.Bemerkung" /></label>
+        </div>
+
+        <fieldset>
+            <legend>Brauchbarkeit bestanden</legend>
+            @foreach (var b in _f.Brauchbarkeiten)
+            {
+                <div class="felder">
+                    <label>Datum <input type="date" @bind="b.Datum" /></label>
+                    <label>Ort <input @bind="b.Ort" /></label>
+                    <label>Bemerkung <input @bind="b.Bemerkung" /></label>
+                </div>
+                <div class="reihe">
+                    @foreach (var fach in Zustand.Faecher.Where(x => x.Aktiv || b.FachIds.Contains(x.Id!.Value)))
+                    {
+                        var id = fach.Id!.Value;
+                        <label><input type="checkbox" checked="@b.FachIds.Contains(id)" @onchange="e => Umschalten(b.FachIds, id, (bool)e.Value!)" /> @fach.Bezeichnung</label>
+                    }
+                    <button class="klein" @onclick="() => _f.Brauchbarkeiten.Remove(b)">entfernen</button>
+                </div>
+                <hr />
+            }
+            <button @onclick="() => _f.Brauchbarkeiten.Add(new BrauchbarkeitFormular())">Brauchbarkeit hinzufügen</button>
+        </fieldset>
+
+        <div class="werkzeuge">
+            <button class="primaer" @onclick="Speichern">Speichern</button>
+            <button @onclick="() => { _f = null; _meldung = null; }">Abbrechen</button>
+        </div>
+    </section>
+}
+
+@if (_meldung is not null)
+{
+    <p class="befund rot">@_meldung</p>
+}
+
+<table class="liste">
+    <thead><tr><th>Rufname</th><th>Rasse</th><th>Geschlecht</th><th>Wurfdatum</th><th>Chip</th><th>Hundeführer</th><th>Eigentümer</th><th>Brauchbarkeit</th><th class="keindruck"></th></tr></thead>
+    <tbody>
+        @foreach (var h in Gefiltert())
+        {
+            <tr>
+                <td>@h.Rufname @if (h.Zuchtbuchname is not null) { <br /><small class="legende">@h.Zuchtbuchname</small> }</td>
+                <td>@h.Rasse</td>
+                <td>@(h.Geschlecht switch { Geschlecht.Ruede => "Rüde", Geschlecht.Huendin => "Hündin", _ => "" })</td>
+                <td>@h.Wurfdatum?.ToString("dd.MM.yyyy")</td>
+                <td>@h.ChipNummer</td>
+                <td>@Name(h.FuehrerId)</td>
+                <td>@(h.EigentuemerId is null ? "" : Name(h.EigentuemerId))</td>
+                <td>
+                    @foreach (var b in h.Brauchbarkeiten)
+                    {
+                        <div>@b.Datum.ToString("dd.MM.yyyy")@(b.Ort is null ? "" : $", {b.Ort}") <small class="legende">@Zustand.FaecherText(b.FachIds)</small></div>
+                    }
+                </td>
+                <td class="keindruck">
+                    <button @onclick="() => Bearbeiten(h)">Bearbeiten</button>
+                    @if (_loeschen == h.Id)
+                    {
+                        <button class="gefahr" @onclick="() => Loeschen(h)">Wirklich löschen</button>
+                        <button @onclick="() => _loeschen = null">Nein</button>
+                    }
+                    else
+                    {
+                        <button @onclick="() => _loeschen = h.Id">Löschen</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private sealed class BrauchbarkeitFormular
+    {
+        public DateOnly Datum { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public string? Ort { get; set; }
+        public string? Bemerkung { get; set; }
+        public HashSet<int> FachIds { get; set; } = [];
+    }
+
+    private sealed class Formular
+    {
+        public int? Id { get; init; }
+        public string Rufname { get; set; } = "";
+        public string? Zuchtbuchname { get; set; }
+        public string? Rasse { get; set; }
+        public DateOnly? Wurfdatum { get; set; }
+        public string GeschlechtText { get; set; } = "";
+        public string? Chip { get; set; }
+        public string? Zuchtbuchnummer { get; set; }
+        public string? Heimtierausweis { get; set; }
+        public int FuehrerId { get; set; }
+        public int EigentuemerId { get; set; }
+        public string? Bemerkung { get; set; }
+        public List<BrauchbarkeitFormular> Brauchbarkeiten { get; set; } = [];
+    }
+
+    private List<HundDaten> _hunde = [];
+    private List<PersonDaten> _personen = [];
+    private List<string> _rassen = [];
+    private Formular? _f;
+    private string _suche = "";
+    private int? _loeschen;
+    private string? _meldung;
+
+    private IEnumerable<HundDaten> Gefiltert() => _hunde.Where(h => string.IsNullOrWhiteSpace(_suche)
+        || $"{h.Rufname} {h.Zuchtbuchname} {h.Rasse} {h.ChipNummer} {Name(h.FuehrerId)}".Contains(_suche.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private string Name(int? personId) => _personen.FirstOrDefault(p => p.Id == personId)?.Anzeigename ?? "";
+
+    private static void Umschalten(HashSet<int> menge, int id, bool an)
+    {
+        if (an) menge.Add(id); else menge.Remove(id);
+    }
+
+    private void Laden()
+    {
+        _hunde = Zustand.Hunde();
+        _personen = Zustand.Personen();
+        _rassen = Zustand.Rassen();
+    }
+
+    private void Neu()
+    {
+        _f = new Formular();
+        _meldung = null;
+    }
+
+    private void Bearbeiten(HundDaten h)
+    {
+        _f = new Formular
+        {
+            Id = h.Id, Rufname = h.Rufname, Zuchtbuchname = h.Zuchtbuchname, Rasse = h.Rasse, Wurfdatum = h.Wurfdatum,
+            GeschlechtText = h.Geschlecht?.ToString() ?? "", Chip = h.ChipNummer, Zuchtbuchnummer = h.Zuchtbuchnummer,
+            Heimtierausweis = h.HeimtierausweisNummer, FuehrerId = h.FuehrerId ?? 0, EigentuemerId = h.EigentuemerId ?? 0, Bemerkung = h.Bemerkung,
+            Brauchbarkeiten = h.Brauchbarkeiten.Select(b => new BrauchbarkeitFormular
+            {
+                Datum = b.Datum, Ort = b.Ort, Bemerkung = b.Bemerkung, FachIds = b.FachIds.ToHashSet(),
+            }).ToList(),
+        };
+        _meldung = null;
+    }
+
+    private void Speichern()
+    {
+        if (_f is null) return;
+        var f = _f;
+        Geschlecht? geschlecht = Enum.TryParse<Geschlecht>(f.GeschlechtText, out var g) ? g : null;
+        Ausfuehren(() => Zustand.HundSpeichern(new HundDaten(f.Id, f.Rufname, f.Zuchtbuchname, f.Rasse, f.Wurfdatum, geschlecht,
+            f.Chip, f.Zuchtbuchnummer, f.Heimtierausweis, f.FuehrerId == 0 ? null : f.FuehrerId, f.EigentuemerId == 0 ? null : f.EigentuemerId,
+            f.Bemerkung, f.Brauchbarkeiten.Select(b => new BrauchbarkeitDaten(null, b.Datum, b.Ort, b.FachIds.ToList(), b.Bemerkung)).ToList())));
+        if (_meldung is null) _f = null;
+    }
+
+    private void Loeschen(HundDaten h)
+    {
+        Ausfuehren(() => Zustand.HundLoeschen(h));
+        _loeschen = null;
+    }
+
+    private void Ausfuehren(Action aktion)
+    {
+        try
+        {
+            aktion();
+            _meldung = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _meldung = ex.Message;
+        }
+        Laden();
+    }
+
+    protected override void OnInitialized()
+    {
+        Laden();
+        Zustand.Geaendert += Aktualisieren;
+    }
+
+    private void Aktualisieren() => InvokeAsync(() => { Laden(); StateHasChanged(); });
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}
