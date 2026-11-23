@@ -187,7 +187,8 @@ public sealed partial class Kursspeicher(IDbContextFactory<HundekursDb> fabrik)
             .Where(t => t.KursId == kursId && t.Gruppe != null)
             .OrderBy(t => t.Id)
             .ToList()
-            .Select(t => new P.Gespann(t.Id, $"{t.Fuehrer!.Vorname} {t.Fuehrer.Nachname}".Trim(), t.Hund!.Rufname, Abbilden(t.Gruppe!.Value)))
+            .Select(t => new P.Gespann(t.Id, $"{t.Fuehrer!.Vorname} {t.Fuehrer.Nachname}".Trim(), t.Hund!.Rufname, Abbilden(t.Gruppe!.Value),
+                t.FuehrerId, t.Fuehrer.Kurzname))
             .ToList();
 
         var termine = db.Termine.AsNoTracking()

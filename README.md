@@ -37,10 +37,11 @@ Mit Demodaten gibt es lokal automatisch das Konto **admin** mit dem Passwort **d
 
   | Rolle | Darf |
   |---|---|
-  | Lesen | Übersicht, Schweißplan, Termine und Gehorsam/Niederwild ansehen und drucken; keine Personen-, Gebühren-, Auslagen- oder km-Daten, keine Anwesenheitslisten |
+  | Lesen | Übersicht, Schweißplan, Termine und Gehorsam/Niederwild ansehen und drucken; andere Teilnehmende nur als „Maximilian M.“ ohne Laufergebnisse; keine Adressen, Gebühren, Auslagen, km-Daten, Anwesenheitslisten oder Planungshinweise |
   | Bearbeiten | alle Kursdaten pflegen |
   | Verwaltung | wie Bearbeiten, dazu Seite **Konten**: anlegen, Rolle ändern, Startpasswort vergeben, sperren |
 
+- Ein Konto kann mit einer **Person** aus den Stammdaten verknüpft werden (Seite Konten, je Person höchstens ein Konto). Dann sieht auch ein Lesekonto beim eigenen Gespann den vollen Namen und die eigenen Ergebnisse, und das eigene Gespann ist im Schweißplan hinterlegt. Die Regeln stehen in `Hundekurs.Planung/Sicht.cs`. Später soll die Verknüpfung auch das Pflegen der eigenen Kontaktdaten ermöglichen.
 - Neue Konten und vergessene Passwörter: Die Verwaltung vergibt ein Startpasswort (wird nur einmal angezeigt). Beim ersten Login muss ein eigenes Passwort mit mindestens 10 Zeichen gesetzt werden.
 - Nach 5 Fehlversuchen ist ein Konto 15 Minuten gesperrt. Gesperrte Konten, neue Rollen und zurückgesetzte Passwörter wirken in offenen Fenstern nach spätestens 5 Minuten.
 - Leserecht wird zusätzlich in der Datenebene durchgesetzt: `HundekursDb` lehnt Änderungen an Kursdaten ab, wenn der angemeldete Benutzer nur lesen darf. Der Name des angemeldeten Benutzers erscheint in der Historie und in `ErstelltVon`/`GeaendertVon`.

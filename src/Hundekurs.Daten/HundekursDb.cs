@@ -107,6 +107,11 @@ public class HundekursDb(DbContextOptions<HundekursDb> options) : IdentityDbCont
         // Identity-Tabellen (Konten, Rollen, Anmeldungen)
         base.OnModelCreating(mb);
         mb.Entity<Benutzerkonto>().Property(b => b.Anzeigename).HasMaxLength(100);
+        mb.Entity<Benutzerkonto>()
+            .HasOne(b => b.Person).WithMany()
+            .HasForeignKey(b => b.PersonId)
+            .OnDelete(DeleteBehavior.SetNull);
+        mb.Entity<Benutzerkonto>().HasIndex(b => b.PersonId).IsUnique();
 
         // Personen und Hunde: Löschen einer Person darf keine Hunde mitreißen
         mb.Entity<Hund>().HasOne(h => h.Fuehrer).WithMany().HasForeignKey(h => h.FuehrerId).OnDelete(DeleteBehavior.SetNull);

@@ -44,6 +44,18 @@ public class Person : Entitaet
 
     public string Anzeigename => $"{Nachname}, {Vorname}";
 
+    /// <summary>Vorname und abgekürzter Nachname, z. B. „Maximilian M.“ – für Konten, die nur lesen dürfen.</summary>
+    public string Kurzname => Kuerzen(Vorname, Nachname);
+
+    public static string Kuerzen(string? vorname, string? nachname)
+    {
+        var v = vorname?.Trim() ?? "";
+        // Bei Namenszusätzen zählt das letzte Wort: „von der Heide“ → „H.“
+        var n = (nachname ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
+        if (n.Length == 0) return v;
+        return v.Length == 0 ? $"{char.ToUpperInvariant(n[0])}." : $"{v} {char.ToUpperInvariant(n[0])}.";
+    }
+
     public string? Adresse =>
         string.IsNullOrWhiteSpace(Strasse) && string.IsNullOrWhiteSpace(Ort) ? null : $"{Strasse}, {Plz} {Ort}".Trim(' ', ',');
 }

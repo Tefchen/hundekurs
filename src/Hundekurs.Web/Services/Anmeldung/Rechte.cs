@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Security.Claims;
 using Hundekurs.Daten;
+using Hundekurs.Planung;
 
 namespace Hundekurs.Web.Services;
 
@@ -39,12 +41,20 @@ public static class Ansprueche
 {
     public const string Anzeigename = "hundekurs:anzeigename";
     public const string PasswortAendern = "hundekurs:passwort-aendern";
+    public const string Person = "hundekurs:person";
 
     public static string Name(ClaimsPrincipal benutzer) =>
         benutzer.FindFirstValue(Anzeigename) is { Length: > 0 } name ? name : benutzer.Identity?.Name ?? "unbekannt";
 
     public static bool DarfBearbeiten(ClaimsPrincipal benutzer) =>
         benutzer.IsInRole(Rollen.Bearbeiten) || benutzer.IsInRole(Rollen.Verwaltung);
+
+    public static int? PersonId(ClaimsPrincipal benutzer) =>
+        int.TryParse(benutzer.FindFirstValue(Person), NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : null;
+
+    /// <summary>Was das Konto von anderen Teilnehmenden sehen darf (Namen, Ergebnisse).</summary>
+    public static Sicht Sichtrechte(ClaimsPrincipal benutzer) =>
+        benutzer.Identity?.IsAuthenticated == true ? new Sicht(DarfBearbeiten(benutzer), PersonId(benutzer)) : Sicht.Eingeschraenkt;
 
     /// <summary>Für Stempel, Historie und die serverseitige Schreibsperre in der Datenebene.</summary>
     public static Sitzungsbenutzer? Sitzung(ClaimsPrincipal benutzer) =>

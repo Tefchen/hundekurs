@@ -42,16 +42,16 @@
     <dt>Vorbereitung</dt><dd>@t.Datum.AddDays(-1).ToString("dddd, dd.MM.") (Vorabend)</dd>
     <dt>Helfer</dt>
     <dd>
-        @(t.Helfer.Count == 0 ? "–" : string.Join(", ", t.Helfer.Select(Zustand.Name)))
+        @(t.Helfer.Count == 0 ? "–" : string.Join(", ", t.Helfer.Select(AnzeigeName)))
         <br /><small>aus Gruppe @Zustand.Planer.Helfergruppe(t): legen am Vorabend die Fährten und gehen als Beobachter mit</small>
     </dd>
     @if (t.Abgemeldet.Count > 0)
     {
-        <dt>Abgemeldet</dt><dd>@string.Join(", ", t.Abgemeldet.Select(Zustand.Name))</dd>
+        <dt>Abgemeldet</dt><dd>@string.Join(", ", t.Abgemeldet.Select(AnzeigeName))</dd>
     }
     @if (t.Gaeste.Count > 0)
     {
-        <dt>Holt nach</dt><dd>@string.Join(", ", t.Gaeste.Select(Zustand.Name))</dd>
+        <dt>Holt nach</dt><dd>@string.Join(", ", t.Gaeste.Select(AnzeigeName))</dd>
     }
     <dt>Status</dt><dd>@t.Status</dd>
 </dl>
@@ -80,7 +80,7 @@
             @foreach (var l in t.Ist.OrderBy(l => l.FaehrteNr))
             {
                 var g = Zustand.Gespann(l.GespannId);
-                <tr><td>@revier?.Kuerzel @l.FaehrteNr</td><td>@g.Fuehrer</td><td>@g.Hund</td><td>@Ergebnis(l.Ergebnis)</td></tr>
+                <tr class="@(_sicht.IstEigenes(g) ? "eigenes" : "")"><td>@revier?.Kuerzel @l.FaehrteNr</td><td>@_sicht.Fuehrer(g)</td><td>@g.Hund</td><td>@(_sicht.Voll(g) ? Ergebnis(l.Ergebnis) : "")</td></tr>
             }
         </tbody>
     </table>
@@ -97,10 +97,10 @@ else
                 @foreach (var z in seq.OrderBy(z => z.FaehrteNr))
                 {
                     var g = Zustand.Gespann(z.GespannId);
-                    <tr class="@(erste ? "neueSequenz" : "")">
+                    <tr class="@(erste ? "neueSequenz" : "") @(_sicht.IstEigenes(g) ? "eigenes" : "")">
                         <td>@(erste ? seq.Key.ToString() : "")</td>
                         <td>@revier?.Kuerzel @z.FaehrteNr</td>
-                        <td>@g.Fuehrer</td>
+                        <td>@_sicht.Fuehrer(g)</td>
                         <td>@g.Hund</td>
                         <td>@(z.ZweiterLaufAufFaehrte ? "zweiter Lauf auf dieser Fährte" : "")@(t.Gaeste.Contains(z.GespannId) ? " holt nach" : "")</td>
                     </tr>
@@ -111,7 +111,10 @@ else
     </table>
 }
 
-<Befundliste Befunde="befunde" />
+@* Hinweise nennen volle Namen und richten sich an die Planung. *@
+<NurBearbeiten>
+    <Befundliste Befunde="befunde" />
+</NurBearbeiten>
 
 <NurBearbeiten>
     <section class="formular keindruck">
@@ -292,6 +295,16 @@ else
 
 @code {
     [Parameter] public int Id { get; set; }
+
+    [CascadingParameter] private Task<AuthenticationState> Anmeldezustand { get; set; } = default!;
+
+    // Lesekonten sehen bei anderen nur „Maximilian M.“, beim eigenen Gespann alles.
+    private Sicht _sicht = Sicht.Eingeschraenkt;
+
+    protected override async Task OnInitializedAsync() =>
+        _sicht = Ansprueche.Sichtrechte((await Anmeldezustand).User);
+
+    private string AnzeigeName(int gespannId) => _sicht.Name(Zustand.Gespann(gespannId));
 
     private Termin? Termin => Zustand.Plan.Termine.SingleOrDefault(x => x.Id == Id);
 

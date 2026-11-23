@@ -58,8 +58,10 @@ public sealed record Revier
     }
 }
 
+// Fuehrer: voller Name (nur für Konten mit Bearbeitungsrecht). FuehrerKurz: „Maximilian M.“ für alle anderen.
+// PersonId: Person des Hundeführers, damit ein verknüpftes Konto sein eigenes Gespann erkennt.
 /// <summary>Ein Gespann aus Hundeführer und Hund in einem Kurs.</summary>
-public sealed record Gespann(int Id, string Fuehrer, string Hund, Gruppe Gruppe);
+public sealed record Gespann(int Id, string Fuehrer, string Hund, Gruppe Gruppe, int? PersonId = null, string? FuehrerKurz = null);
 
 /// <summary>Geplante Fährte eines Gespanns an einem Termin.</summary>
 public sealed record Zuteilung(int GespannId, int FaehrteNr, int Sequenz, bool ZweiterLaufAufFaehrte);

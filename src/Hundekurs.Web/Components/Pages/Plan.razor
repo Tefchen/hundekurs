@@ -50,8 +50,8 @@
             <tr class="gruppenzeile"><td colspan="@(termine.Count + 1)">Gruppe @gruppe.Key</td></tr>
             @foreach (var g in gruppe)
             {
-                <tr>
-                    <td class="name">@g.Fuehrer<br /><small>@g.Hund</small></td>
+                <tr class="@(_sicht.IstEigenes(g) ? "eigenes" : "")">
+                    <td class="name">@_sicht.Fuehrer(g)<br /><small>@g.Hund</small></td>
                     @foreach (var t in termine)
                     {
                         var (text, klasse) = Zelle(t, g);
@@ -68,11 +68,25 @@
 <p class="legende">
     <b>N3</b> = Revier-Kürzel und Fährte · <b>²</b> = zweiter Lauf auf der doppelten Fährte · <b>H</b> = Helferdienst ·
     <b>ab</b> = abgemeldet · <b>*</b> = Revier von Hand festgelegt · <span class="ist">kursiv</span> = tatsächlich gelaufen
+    @if (_sicht.PersonId is not null)
+    {
+        <span> · <span class="eigenes">hinterlegt</span> = eigenes Gespann</span>
+    }
 </p>
 
-<Befundliste Befunde="befunde" />
+@* Hinweise nennen volle Namen und richten sich an die Planung. *@
+<NurBearbeiten>
+    <Befundliste Befunde="befunde" />
+</NurBearbeiten>
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState> Anmeldezustand { get; set; } = default!;
+
+    private Sicht _sicht = Sicht.Eingeschraenkt;
+
+    protected override async Task OnInitializedAsync() =>
+        _sicht = Ansprueche.Sichtrechte((await Anmeldezustand).User);
+
     private (string Text, string Klasse) Zelle(Termin t, Gespann g)
     {
         var kuerzel = Zustand.Revier(t.RevierId)?.Kuerzel ?? "";
@@ -81,7 +95,13 @@
         {
             var lauf = t.Ist.FirstOrDefault(l => l.GespannId == g.Id);
             if (lauf is not null)
-                return ($"{kuerzel}{lauf.FaehrteNr}{(lauf.Ergebnis == LaufErgebnis.Abbruch ? " A" : lauf.Ergebnis == LaufErgebnis.NichtAngetreten ? " –" : "")}", "ist");
+            {
+                // Ergebnis (Abbruch, nicht angetreten) nur mit Bearbeitungsrecht oder beim eigenen Gespann.
+                var ergebnis = !_sicht.Voll(g) ? ""
+                    : lauf.Ergebnis == LaufErgebnis.Abbruch ? " A"
+                    : lauf.Ergebnis == LaufErgebnis.NichtAngetreten ? " –" : "";
+                return ($"{kuerzel}{lauf.FaehrteNr}{ergebnis}", "ist");
+            }
             return (t.Helfer.Contains(g.Id) ? "H" : "", t.Helfer.Contains(g.Id) ? "helfer" : "");
         }
         var z = t.Zuteilungen.FirstOrDefault(x => x.GespannId == g.Id);

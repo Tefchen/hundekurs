@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using Hundekurs.Daten;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -20,6 +21,7 @@ public sealed class KontoClaimsFabrik(
         var identitaet = await base.GenerateClaimsAsync(konto);
         identitaet.AddClaim(new Claim(Ansprueche.Anzeigename, konto.Anzeigename));
         if (konto.MussPasswortAendern) identitaet.AddClaim(new Claim(Ansprueche.PasswortAendern, "1"));
+        if (konto.PersonId is { } personId) identitaet.AddClaim(new Claim(Ansprueche.Person, personId.ToString(CultureInfo.InvariantCulture)));
         return identitaet;
     }
 }

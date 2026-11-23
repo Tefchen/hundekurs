@@ -12,8 +12,10 @@
 
 <p>
     Wer sich anmelden darf und mit welchem Recht.
-    <b>Lesen</b> sieht Übersicht, Schweißplan und Termine; <b>Bearbeiten</b> pflegt alle Kursdaten; <b>Verwaltung</b> zusätzlich die Konten.
-    Änderungen an Rolle, Passwort oder Sperre wirken in bereits geöffneten Fenstern nach spätestens 5 Minuten.
+    <b>Lesen</b> sieht Übersicht, Schweißplan und Termine – andere Teilnehmende nur als „Maximilian M.“, ohne Ergebnisse;
+    <b>Bearbeiten</b> pflegt alle Kursdaten; <b>Verwaltung</b> zusätzlich die Konten.
+    Ist ein Konto mit einer <b>Person</b> verknüpft, sieht es beim eigenen Gespann alles und findet es im Plan hervorgehoben.
+    Änderungen an Rolle, Person, Passwort oder Sperre wirken in bereits geöffneten Fenstern nach spätestens 5 Minuten (neu anmelden).
 </p>
 
 @if (_startpasswort is not null)
@@ -33,7 +35,7 @@
 
 <table class="liste">
     <thead>
-        <tr><th>Benutzername</th><th>Name</th><th>Rolle</th><th>Status</th><th class="keindruck"></th></tr>
+        <tr><th>Benutzername</th><th>Name</th><th>Person</th><th>Rolle</th><th>Status</th><th class="keindruck"></th></tr>
     </thead>
     <tbody>
         @foreach (var k in _konten)
@@ -42,6 +44,15 @@
             <tr class="@(k.Gesperrt ? "inaktiv" : "")">
                 <td>@k.Benutzername</td>
                 <td>@k.Anzeigename</td>
+                <td>
+                    <select value="@(k.PersonId?.ToString() ?? "")" @onchange="e => PersonSetzen(k, e.Value?.ToString())">
+                        <option value="">– keine –</option>
+                        @foreach (var p in _personen)
+                        {
+                            <option value="@p.Id" disabled="@VergebenAnAndere(p.Id, k.Id)">@p.Name</option>
+                        }
+                    </select>
+                </td>
                 <td>
                     <select value="@k.Rolle" disabled="@selbst" @onchange="e => RolleSetzen(k, e.Value?.ToString())">
                         @foreach (var r in Rollen.Alle)
@@ -76,6 +87,16 @@
         <label>Benutzername <small>(zum Anmelden; Kleinbuchstaben, Ziffern, - . _)</small><input @bind="_neuName" autocomplete="off" /></label>
         <label>Name <small>(erscheint in Kopfzeile und Historie)</small><input @bind="_neuAnzeigename" autocomplete="off" /></label>
         <label>
+            Person <small>(optional; Name wird übernommen, falls oben leer)</small>
+            <select @bind="_neuPersonId">
+                <option value="">– keine –</option>
+                @foreach (var p in _personen.Where(p => !_konten.Any(k => k.PersonId == p.Id)))
+                {
+                    <option value="@p.Id">@p.Name</option>
+                }
+            </select>
+        </label>
+        <label>
             Rolle
             <select @bind="_neuRolle">
                 @foreach (var r in Rollen.Alle)
@@ -91,9 +112,12 @@
 @code {
     [CascadingParameter] private Task<AuthenticationState> Anmeldezustand { get; set; } = default!;
 
-    private sealed record Eintrag(string Id, string Benutzername, string Anzeigename, string Rolle, bool Gesperrt, bool MussPasswortAendern, DateTimeOffset? GesperrtBis);
+    private sealed record Eintrag(string Id, string Benutzername, string Anzeigename, string Rolle, bool Gesperrt, bool MussPasswortAendern, DateTimeOffset? GesperrtBis, int? PersonId);
+    private sealed record PersonAuswahl(int Id, string Name, string Vollname);
 
     private List<Eintrag> _konten = [];
+    private List<PersonAuswahl> _personen = [];
+    private string _neuPersonId = "";
     private string? _eigeneId;
     private string? _meldung;
     private bool _fehler;
@@ -109,17 +133,26 @@
         await using var bereich = Bereiche.CreateAsyncScope();
         var konten = bereich.ServiceProvider.GetRequiredService<UserManager<Benutzerkonto>>();
         _eigeneId = konten.GetUserId(zustand.User);
-        await LadenAsync(konten);
+        await LadenAsync(bereich.ServiceProvider);
     }
 
-    private async Task LadenAsync(UserManager<Benutzerkonto> konten)
+    private async Task LadenAsync(IServiceProvider dienste)
     {
+        var konten = dienste.GetRequiredService<UserManager<Benutzerkonto>>();
+        var db = dienste.GetRequiredService<HundekursDb>();
+        _personen = (await db.Personen.AsNoTracking()
+                .Where(p => p.AnonymisiertAm == null)
+                .OrderBy(p => p.Nachname).ThenBy(p => p.Vorname)
+                .ToListAsync())
+            .Select(p => new PersonAuswahl(p.Id, p.Anzeigename, $"{p.Vorname} {p.Nachname}".Trim()))
+            .ToList();
+
         var liste = new List<Eintrag>();
         foreach (var b in await konten.Users.OrderBy(b => b.UserName).ToListAsync())
         {
             var rolle = (await konten.GetRolesAsync(b)).FirstOrDefault() ?? "–";
             var gesperrt = b.LockoutEnd is { } ende && ende > DateTimeOffset.UtcNow;
-            liste.Add(new Eintrag(b.Id, b.UserName ?? "", b.Anzeigename, rolle, gesperrt, b.MussPasswortAendern, b.LockoutEnd));
+            liste.Add(new Eintrag(b.Id, b.UserName ?? "", b.Anzeigename, rolle, gesperrt, b.MussPasswortAendern, b.LockoutEnd, b.PersonId));
         }
         _konten = liste;
     }
@@ -148,7 +181,7 @@
             _meldung = ex.Message;
             _fehler = true;
         }
-        await LadenAsync(konten);
+        await LadenAsync(bereich.ServiceProvider);
     }
 
     private static string? Fehler(IdentityResult ergebnis) =>
@@ -157,16 +190,21 @@
     private bool LetzteVerwaltung(Eintrag k) =>
         k.Rolle == Rollen.Verwaltung && _konten.Count(x => x.Rolle == Rollen.Verwaltung && !x.Gesperrt) <= 1;
 
+    private bool VergebenAnAndere(int personId, string kontoId) =>
+        _konten.Any(k => k.PersonId == personId && k.Id != kontoId);
+
     private async Task Anlegen()
     {
         var name = _neuName.Trim().ToLowerInvariant();
-        var anzeigename = string.IsNullOrWhiteSpace(_neuAnzeigename) ? name : _neuAnzeigename.Trim();
+        int? personId = int.TryParse(_neuPersonId, out var pid) ? pid : null;
+        var person = _personen.FirstOrDefault(p => p.Id == personId);
+        var anzeigename = !string.IsNullOrWhiteSpace(_neuAnzeigename) ? _neuAnzeigename.Trim() : person?.Vollname ?? name;
         var rolle = _neuRolle;
         var passwort = Startpasswort.Erzeugen();
 
         await Ausfuehren($"Konto „{name}“ angelegt ({rolle}).", async konten =>
         {
-            var konto = new Benutzerkonto { UserName = name, Anzeigename = anzeigename, MussPasswortAendern = true };
+            var konto = new Benutzerkonto { UserName = name, Anzeigename = anzeigename, MussPasswortAendern = true, PersonId = personId };
             var fehler = Fehler(await konten.CreateAsync(konto, passwort));
             if (fehler is not null) return fehler;
             return Fehler(await konten.AddToRoleAsync(konto, rolle));
@@ -175,9 +213,32 @@
         if (!_fehler)
         {
             _startpasswort = (name, passwort);
-            _neuName = _neuAnzeigename = "";
+            _neuName = _neuAnzeigename = _neuPersonId = "";
             _neuRolle = Rollen.Lesen;
         }
+    }
+
+    private async Task PersonSetzen(Eintrag k, string? auswahl)
+    {
+        int? personId = int.TryParse(auswahl, out var id) ? id : null;
+        if (personId == k.PersonId) return;
+        if (personId is { } p && VergebenAnAndere(p, k.Id))
+        {
+            _meldung = "Diese Person ist schon mit einem anderen Konto verknüpft.";
+            _fehler = true;
+            return;
+        }
+
+        var personName = _personen.FirstOrDefault(x => x.Id == personId)?.Name;
+        await Ausfuehren(personName is null ? $"{k.Anzeigename} ist mit keiner Person mehr verknüpft." : $"{k.Anzeigename} ist jetzt mit {personName} verknüpft.",
+            async konten =>
+            {
+                var konto = await konten.FindByIdAsync(k.Id) ?? throw new InvalidOperationException("Konto nicht gefunden.");
+                konto.PersonId = personId;
+                var fehler = Fehler(await konten.UpdateAsync(konto));
+                // Neuer Stempel: Die Verknüpfung steht im Anmelde-Cookie und gilt nach der nächsten Anmeldung.
+                return fehler ?? Fehler(await konten.UpdateSecurityStampAsync(konto));
+            });
     }
 
     private async Task RolleSetzen(Eintrag k, string? neu)
