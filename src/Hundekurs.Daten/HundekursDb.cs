@@ -174,6 +174,20 @@ public class HundekursDb(DbContextOptions<HundekursDb> options) : IdentityDbCont
         mb.Entity<Standardstrecke>().HasOne<Person>().WithMany().HasForeignKey(x => x.PersonId).OnDelete(DeleteBehavior.Cascade);
         mb.Entity<Standardstrecke>().HasIndex(x => new { x.PersonId, x.RevierId, x.UebungsgelaendeId });
 
+        // Prüfung: Prüfungstag hängt am Termin (Art Prüfung) und wird mit ihm gelöscht, Nennungen mit dem Prüfungstag.
+        // Hund und Führer einer Nennung lassen sich nicht löschen, solange sie genannt sind.
+        mb.Entity<Pruefungstag>().HasOne(p => p.Termin).WithOne().HasForeignKey<Pruefungstag>(p => p.TerminId).OnDelete(DeleteBehavior.Cascade);
+        mb.Entity<Pruefungstag>().HasOne<Person>().WithMany().HasForeignKey(p => p.RichterobmannId).OnDelete(DeleteBehavior.SetNull);
+        mb.Entity<Pruefungstag>().HasOne<Person>().WithMany().HasForeignKey(p => p.Richter2Id).OnDelete(DeleteBehavior.SetNull);
+        mb.Entity<Pruefungstag>().HasOne<Person>().WithMany().HasForeignKey(p => p.Richter3Id).OnDelete(DeleteBehavior.SetNull);
+        mb.Entity<Pruefungstag>().HasOne<Person>().WithMany().HasForeignKey(p => p.HelferStandruheId).OnDelete(DeleteBehavior.SetNull);
+        mb.Entity<Nennung>().HasOne<Pruefungstag>().WithMany().HasForeignKey(n => n.PruefungstagId).OnDelete(DeleteBehavior.Cascade);
+        mb.Entity<Nennung>().HasOne(n => n.Hund).WithMany().HasForeignKey(n => n.HundId).OnDelete(DeleteBehavior.Restrict);
+        mb.Entity<Nennung>().HasOne(n => n.Fuehrer).WithMany().HasForeignKey(n => n.FuehrerId).OnDelete(DeleteBehavior.Restrict);
+        mb.Entity<Nennung>().HasOne<Kursteilnahme>().WithMany().HasForeignKey(n => n.KursteilnahmeId).OnDelete(DeleteBehavior.SetNull);
+        mb.Entity<Nennung>().HasIndex(n => new { n.PruefungstagId, n.HundId }).IsUnique();
+        mb.Entity<Pruefungsergebnis>().HasOne<Nennung>().WithMany().HasForeignKey(e => e.NennungId).OnDelete(DeleteBehavior.Cascade);
+
         mb.Entity<Aenderungsprotokoll>().HasIndex(a => a.Zeitpunkt);
     }
 }

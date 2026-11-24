@@ -1,0 +1,704 @@
+@page "/pruefungen"
+@attribute [Authorize(Policy = Richtlinien.Lesen)]
+@implements IDisposable
+@inject PlanungsZustand Zustand
+
+<PageTitle>Prüfungen</PageTitle>
+
+@{
+    var tage = Zustand.Pruefungstage();
+    var nennungen = _darfBearbeiten || _sicht.PersonId is not null ? Zustand.Nennungen() : [];
+    var pruefer = _darfBearbeiten ? Zustand.Pruefer() : [];
+    var gewaehlt = tage.FirstOrDefault(t => t.Id == _tagId);
+}
+
+<h1 class="keindruck">Brauchbarkeitsprüfung</h1>
+
+<p class="keindruck">
+    Geprüft wird nach dem letzten Trainingstag@(Zustand.LetzterTrainingstag is DateOnly l ? $" ({l:dd.MM.yyyy})" : ""),
+    meist sonntags ab 8:00 Uhr, mit höchstens @Pruefungsregeln.StandardMaxHunde Hunden je Tag.
+    Gespanne aus dem Kurs haben bis zum Meldeschluss Vorrang; kursfremde Gespanne stehen bis dahin auf der Warteliste und rücken in freie Plätze nach.
+</p>
+
+@if (_meldung is not null && gewaehlt is null)
+{
+    <p class="befund @(_fehler ? "rot" : "gelb") keindruck">@_meldung</p>
+}
+
+@* ---------- Übersicht der Prüfungstage ---------- *@
+<section class="keindruck">
+    <h2>Termine</h2>
+    @if (tage.Count == 0)
+    {
+        <p class="befund gelb">Noch keine Prüfungstage angelegt.</p>
+    }
+    else
+    {
+        <table class="liste">
+            <thead>
+                <tr>
+                    <th>Datum</th><th>Beginn</th><th>Revier</th><th>Fährten legen</th><th>Meldeschluss</th><th>Plätze</th>
+                    @if (_darfBearbeiten) { <th>Prüfer</th><th>Verpflegung</th><th></th> }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in tage)
+                {
+                    var plaetze = PlanungsZustand.Plaetze(t, nennungen);
+                    var belegt = _darfBearbeiten ? plaetze.Values.Count(p => p.Status == Platzstatus.Startplatz) : (int?)null;
+                    var warteliste = plaetze.Values.Count(p => p.Status == Platzstatus.Warteliste);
+                    var eigene = nennungen.Where(n => n.PruefungstagId == t.Id && n.FuehrerId == _sicht.PersonId).ToList();
+                    <tr class="@(t.Id == _tagId ? "markiert" : "") @(eigene.Count > 0 ? "eigenes" : "")">
+                        <td>@t.Datum.ToString("ddd dd.MM.yyyy")</td>
+                        <td>@(t.Beginn?.ToString("HH\\:mm") ?? "–")</td>
+                        <td>@(Zustand.Revier(t.RevierId)?.Name ?? "–")</td>
+                        <td>@t.Vortag.ToString("ddd dd.MM.")@(t.VortagUhrzeit is TimeOnly u ? $", {u:HH\\:mm}" : "")</td>
+                        <td>@(t.Meldeschluss?.ToString("dd.MM.yyyy") ?? "–")</td>
+                        <td>
+                            @if (belegt is int b)
+                            {
+                                <span>@b von @t.MaxHunde</span>
+                                @if (warteliste > 0) { <span class="etikett grau">@warteliste auf Warteliste</span> }
+                            }
+                            else
+                            {
+                                <span>höchstens @t.MaxHunde Hunde</span>
+                            }
+                            @foreach (var n in eigene)
+                            {
+                                var p = plaetze[n.Id!.Value];
+                                <br /><small>@n.Hund: @(p.Status == Platzstatus.Startplatz ? "Startplatz" : $"Warteliste, Platz {p.Position - t.MaxHunde}")</small>
+                            }
+                        </td>
+                        @if (_darfBearbeiten)
+                        {
+                            var befunde = Zustand.PruefungBefunde(t);
+                            var verpflegung = PlanungsZustand.VerpflegungZaehlen(t, nennungen);
+                            <td>
+                                @(t.Besetzung.Richter.Count) von @Pruefungsregeln.AnzahlPruefer
+                                @if (befunde.Count == 0) { <span class="ampel gruen">vollständig</span> }
+                                else if (befunde.Any(x => x.Schwere == Schwere.Fehler)) { <span class="ampel rot">offen</span> }
+                                else { <span class="ampel gelb">Hinweis</span> }
+                            </td>
+                            <td title="Hundeführer @verpflegung.Hundefuehrer, Gäste @verpflegung.Gaeste, Prüfer @verpflegung.Pruefer, Ausbilder @verpflegung.Ausbilder, weitere Helfer @verpflegung.WeitereHelfer">
+                                @verpflegung.Gesamt Personen
+                            </td>
+                            <td>
+                                <button class="klein" @onclick="() => Waehlen(t)">@(t.Id == _tagId ? "geöffnet" : "öffnen")</button>
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <NurBearbeiten>
+        @if (_anlegen is null)
+        {
+            <div class="werkzeuge">
+                <button @onclick="AnlegenBeginnen" disabled="@(Zustand.LetzterTrainingstag is null)"
+                        title="@(Zustand.LetzterTrainingstag is null ? "Zuerst das Kursjahr anlegen" : "")">Prüfungstage anlegen …</button>
+            </div>
+        }
+        else
+        {
+            <section class="formular">
+                <h3>Prüfungstage anlegen</h3>
+                <p class="legende">Vorschlag: die Sonntage nach dem letzten Trainingstag. Beginn 8:00 Uhr, Fährten am Vortag, höchstens @Pruefungsregeln.StandardMaxHunde Hunde – alles lässt sich danach je Tag ändern.</p>
+                <div class="felder">
+                    @for (var i = 0; i < _anlegen.Daten.Count; i++)
+                    {
+                        var index = i;
+                        <label>@(index + 1). Termin <input type="date" @bind="_anlegen.Daten[index]" /></label>
+                    }
+                    <label>
+                        Revier
+                        <select @bind="_anlegen.RevierId">
+                            <option value="0">– noch offen –</option>
+                            @foreach (var r in Zustand.Reviere.Where(r => r.Aktiv && r.Verwendung != Verwendung.Training)) { <option value="@r.Id">@r.Name</option> }
+                            @foreach (var r in Zustand.Reviere.Where(r => r.Aktiv && r.Verwendung == Verwendung.Training)) { <option value="@r.Id">@r.Name (Trainingsrevier)</option> }
+                        </select>
+                    </label>
+                </div>
+                <div class="werkzeuge">
+                    <button @onclick="() => _anlegen.Daten.Add(_anlegen.Daten.Count > 0 ? _anlegen.Daten[^1].AddDays(7) : DateOnly.FromDateTime(DateTime.Today))">weiterer Termin</button>
+                    @if (_anlegen.Daten.Count > 1)
+                    {
+                        <button @onclick="() => _anlegen.Daten.RemoveAt(_anlegen.Daten.Count - 1)">letzten entfernen</button>
+                    }
+                    <span class="trenner"></span>
+                    <button class="primaer" @onclick="Anlegen">Anlegen</button>
+                    <button @onclick="() => _anlegen = null">Abbrechen</button>
+                </div>
+            </section>
+        }
+    </NurBearbeiten>
+</section>
+
+@if (gewaehlt is not null && _darfBearbeiten)
+{
+    var plaetze = PlanungsZustand.Plaetze(gewaehlt, nennungen);
+    var tagNennungen = nennungen.Where(n => n.PruefungstagId == gewaehlt.Id)
+        .OrderBy(n => plaetze[n.Id!.Value].Status).ThenBy(n => n.Losnummer ?? int.MaxValue).ThenBy(n => plaetze[n.Id!.Value].Position).ToList();
+    var starter = tagNennungen.Where(n => plaetze[n.Id!.Value].Status == Platzstatus.Startplatz).ToList();
+    var verpflegung = PlanungsZustand.VerpflegungZaehlen(gewaehlt, nennungen);
+
+    <section class="keindruck">
+        <h2>Prüfung am @gewaehlt.Datum.ToString("dddd, dd.MM.yyyy")</h2>
+
+        <Befundliste Befunde="Zustand.PruefungBefunde(gewaehlt)" />
+
+        <div class="werkzeuge">
+            <label>
+                Ansicht
+                <select @bind="_ansicht">
+                    <option value="nennungen">Nennungen</option>
+                    <option value="tag">Termin und Besetzung</option>
+                    <option value="liste">Prüfungsliste (Druck)</option>
+                    <option value="chip">Chip-Kontrolle (Druck)</option>
+                </select>
+            </label>
+            <span class="trenner"></span>
+            <button @onclick="() => NennungNeu(gewaehlt)">Neue Nennung</button>
+            <button @onclick="() => Ausfuehren(() => Zustand.LoseZiehen(gewaehlt))" disabled="@(starter.Count == 0)"
+                    title="Startreihenfolge der Gespanne mit Startplatz auslosen">Lose ziehen</button>
+            <button onclick="window.print()">Drucken</button>
+            <button @onclick="() => { _tagId = null; _n = null; _t = null; _meldung = null; }">Schließen</button>
+        </div>
+        @if (_meldung is not null)
+        {
+            <p class="befund @(_fehler ? "rot" : "gelb")">@_meldung</p>
+        }
+    </section>
+
+    @if (_n is not null)
+    {
+        <section class="formular keindruck">
+            <h3>@(_n.Id is null ? "Neue Nennung" : "Nennung bearbeiten")</h3>
+            <div class="reihe">
+                <label><input type="radio" name="herkunft" checked="@_n.AusKurs" @onchange="() => _n.AusKurs = true" /> Gespann aus dem Kurs</label>
+                <label><input type="radio" name="herkunft" checked="@(!_n.AusKurs)" @onchange="() => _n.AusKurs = false" /> kursfremdes Gespann</label>
+            </div>
+            <div class="felder">
+                @if (_n.AusKurs)
+                {
+                    <label>
+                        Gespann
+                        <select value="@_n.KursteilnahmeId" @onchange="e => GespannWaehlen(int.Parse((string)e.Value!))">
+                            <option value="0">– bitte wählen –</option>
+                            @foreach (var t in _teilnehmer.Where(t => t.Ausbildung.Jagdlich))
+                            {
+                                var schon = nennungen.Any(x => x.HundId == t.HundId && x.Id != _n.Id);
+                                <option value="@t.KursteilnahmeId" disabled="@schon">@t.Nachname, @t.Vorname / @t.Hund@(schon ? " (schon genannt)" : "")</option>
+                            }
+                        </select>
+                    </label>
+                }
+                else
+                {
+                    <label>
+                        Hund
+                        <select value="@_n.HundId" @onchange="e => HundWaehlen(int.Parse((string)e.Value!))">
+                            <option value="0">– bitte wählen –</option>
+                            @foreach (var h in _hunde)
+                            {
+                                var schon = nennungen.Any(x => x.HundId == h.Id && x.Id != _n.Id);
+                                <option value="@h.Id" disabled="@schon">@h.Rufname@(h.Rasse is null ? "" : $" ({h.Rasse})")@(schon ? " – schon genannt" : "")</option>
+                            }
+                        </select>
+                    </label>
+                    <label>
+                        Hundeführer
+                        <select @bind="_n.FuehrerId">
+                            <option value="0">– bitte wählen –</option>
+                            @foreach (var p in _personen) { <option value="@p.Id">@p.Anzeigename</option> }
+                        </select>
+                    </label>
+                }
+                <label>
+                    Prüfungstag
+                    <select @bind="_n.PruefungstagId">
+                        @foreach (var t in tage) { <option value="@t.Id">@t.Datum.ToString("ddd dd.MM.yyyy")</option> }
+                    </select>
+                </label>
+                <label>Eingang der Nennung <input type="date" @bind="_n.GenanntAm" /></label>
+                <label>Gäste <input type="number" min="0" max="20" style="width:5rem" @bind="_n.Gaeste" /></label>
+                <label>Nenngeld (€) <input type="number" step="0.01" min="0" style="width:7rem" @bind="_n.Nenngeld" /></label>
+                <label>bezahlt am <input type="date" @bind="_n.BezahltAm" /></label>
+                <label>Bemerkung <input @bind="_n.Bemerkung" /></label>
+            </div>
+            @if (!_n.AusKurs)
+            {
+                <p class="legende">Noch nicht erfasste Hunde und Personen bitte zuerst unter <a href="hunde">Hunde</a> bzw. <a href="personen">Personen</a> anlegen (Rasse, Geschlecht und Chipnummer stehen auf der Prüfungsliste).</p>
+            }
+            <fieldset>
+                <legend>Fächer</legend>
+                <div class="reihe">
+                    <label><input type="checkbox" @bind="_n.Gehorsam" /> Grundgehorsam</label>
+                    <label><input type="checkbox" @bind="_n.Schalenwild" /> Nachsuche auf Schalenwild</label>
+                    <label><input type="checkbox" @bind="_n.Niederwild" /> Nachsuche auf Niederwild</label>
+                </div>
+                <p class="legende">Grundgehorsam ist Pflichtfach; ohne ihn nur bei bereits bestandener Brauchbarkeit und reiner Niederwild-Nennung.</p>
+            </fieldset>
+            <div class="werkzeuge">
+                <button class="primaer" @onclick="NennungSpeichern">Speichern</button>
+                <button @onclick="() => _n = null">Abbrechen</button>
+            </div>
+        </section>
+    }
+
+    @if (_ansicht == "tag" && _t is not null)
+    {
+        <section class="formular keindruck">
+            <h3>Termin und Besetzung</h3>
+            <div class="felder">
+                <label>Datum <input type="date" @bind="_t.Datum" /></label>
+                <label>Beginn <input type="time" @bind="_t.Beginn" /></label>
+                <label>
+                    Revier
+                    <select @bind="_t.RevierId">
+                        <option value="0">– noch offen –</option>
+                        @foreach (var r in Zustand.Reviere.Where(r => r.Aktiv || r.Id == _t.RevierId)) { <option value="@r.Id">@r.Name</option> }
+                    </select>
+                </label>
+                <label>Fährten legen am <input type="date" @bind="_t.Vortag" /></label>
+                <label>um <input type="time" @bind="_t.VortagUhrzeit" /></label>
+                <label>höchstens Hunde <input type="number" min="1" max="20" style="width:5rem" @bind="_t.MaxHunde" /></label>
+                <label>Meldeschluss <input type="date" @bind="_t.Meldeschluss" /></label>
+                <label>Lokal <input @bind="_t.Lokal" placeholder="z. B. Jagdhütte" /></label>
+                <label>weitere Helfer (Treiber o. ä.) <input type="number" min="0" style="width:5rem" @bind="_t.WeitereHelfer" /></label>
+                <label>Bemerkung <input @bind="_t.Bemerkung" /></label>
+            </div>
+
+            <fieldset>
+                <legend>Verbandsprüfer</legend>
+                @if (pruefer.Count == 0)
+                {
+                    <p class="befund gelb">Noch keine Prüfer im Kurs. Unter <a href="personen">Personen</a> „Prüfer“ ankreuzen (mit Richternummer).</p>
+                }
+                <div class="felder">
+                    <label>Richterobmann <PrueferAuswahl Pruefer="pruefer" @bind-Wert="_t.RichterobmannId" /></label>
+                    <label>2. Prüfer <PrueferAuswahl Pruefer="pruefer" @bind-Wert="_t.Richter2Id" /></label>
+                    <label>3. Prüfer <PrueferAuswahl Pruefer="pruefer" @bind-Wert="_t.Richter3Id" /></label>
+                </div>
+                <p class="legende">Am Vortag beim Legen der Fährten (prüft, ob sie der Prüfungsordnung entsprechen):</p>
+                <div class="ankreuzliste">
+                    @foreach (var p in pruefer)
+                    {
+                        var id = p.PersonId;
+                        <label><input type="checkbox" checked="@_t.PrueferAmVortag.Contains(id)" @onchange="e => Umschalten(_t.PrueferAmVortag, id, (bool)e.Value!)" /> @p.Name</label>
+                    }
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend>Ausbilder (km-Abrechnung)</legend>
+                <p class="legende">Am Vortag (Fährten legen):</p>
+                <div class="ankreuzliste">
+                    @foreach (var a in _ausbilder)
+                    {
+                        var id = a.PersonId!.Value;
+                        <label><input type="checkbox" checked="@_t.AusbilderVortag.Contains(id)" @onchange="e => Umschalten(_t.AusbilderVortag, id, (bool)e.Value!)" /> @a.Vorname @a.Nachname</label>
+                    }
+                </div>
+                <p class="legende">Am Prüfungstag:</p>
+                <div class="ankreuzliste">
+                    @foreach (var a in _ausbilder)
+                    {
+                        var id = a.PersonId!.Value;
+                        <label><input type="checkbox" checked="@_t.AusbilderPruefung.Contains(id)" @onchange="e => Umschalten(_t.AusbilderPruefung, id, (bool)e.Value!)" /> @a.Vorname @a.Nachname</label>
+                    }
+                </div>
+            </fieldset>
+
+            <div class="werkzeuge">
+                <button class="primaer" disabled="@_speichert" @onclick="() => TagSpeichern(gewaehlt)">Speichern</button>
+                @if (_loeschen)
+                {
+                    <button class="gefahr" @onclick="() => Ausfuehren(() => { Zustand.PruefungstagLoeschen(gewaehlt); _tagId = null; })">Prüfungstag wirklich löschen</button>
+                    <button @onclick="() => _loeschen = false">nein</button>
+                }
+                else
+                {
+                    <button @onclick="() => _loeschen = true">Prüfungstag löschen</button>
+                }
+            </div>
+        </section>
+    }
+
+    @if (_ansicht == "nennungen")
+    {
+        <section class="keindruck">
+            @if (tagNennungen.Count == 0)
+            {
+                <p>Noch keine Nennungen für diesen Tag.</p>
+            }
+            else
+            {
+                <table class="liste">
+                    <thead>
+                        <tr><th>Los</th><th>Platz</th><th>Hundeführer</th><th>Hund</th><th>Fächer</th><th>Eingang</th><th class="zahl">Gäste</th><th class="zahl">Nenngeld</th><th>bezahlt</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var n in tagNennungen)
+                        {
+                            var p = plaetze[n.Id!.Value];
+                            <tr class="@(p.Status == Platzstatus.Warteliste ? "inaktiv" : "")">
+                                <td>@n.Losnummer</td>
+                                <td>@(p.Status == Platzstatus.Startplatz ? "Startplatz" : $"Warteliste {p.Position - gewaehlt.MaxHunde}")</td>
+                                <td>@n.Fuehrer @if (!n.AusDemKurs) { <span class="etikett grau">kursfremd</span> }</td>
+                                <td>@n.Hund <small>@n.Rasse</small></td>
+                                <td>@n.Faecher.Text</td>
+                                <td>@n.GenanntAm.ToString("dd.MM.yyyy")</td>
+                                <td class="zahl">@n.Gaeste</td>
+                                <td class="zahl">@Gebuehrenregel.Euro(n.Nenngeld)</td>
+                                <td>
+                                    @if (n.NenngeldBezahltAm is DateOnly b)
+                                    {
+                                        <span>@b.ToString("dd.MM.yyyy")</span>
+                                        <button class="klein" @onclick="() => Ausfuehren(() => Zustand.NenngeldBezahltSetzen(n, null))">offen</button>
+                                    }
+                                    else if (n.Nenngeld > 0)
+                                    {
+                                        <button class="klein" @onclick="() => Ausfuehren(() => Zustand.NenngeldBezahltSetzen(n, DateOnly.FromDateTime(DateTime.Today)))">heute bezahlt</button>
+                                    }
+                                </td>
+                                <td>
+                                    <button class="klein" @onclick="() => NennungBearbeiten(n)">ändern</button>
+                                    @if (_nennungLoeschen == n.Id)
+                                    {
+                                        <button class="klein gefahr" @onclick="() => Ausfuehren(() => Zustand.NennungLoeschen(n))">wirklich löschen</button>
+                                        <button class="klein" @onclick="() => _nennungLoeschen = null">nein</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="klein" @onclick="() => _nennungLoeschen = n.Id">löschen</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th colspan="6">@starter.Count von @gewaehlt.MaxHunde Startplätzen belegt@(tagNennungen.Count > starter.Count ? $", {tagNennungen.Count - starter.Count} auf der Warteliste" : "")</th>
+                            <th class="zahl">@starter.Sum(n => n.Gaeste)</th>
+                            <th class="zahl">@Gebuehrenregel.Euro(tagNennungen.Sum(n => n.Nenngeld))</th>
+                            <th colspan="2">offen: @Gebuehrenregel.Euro(tagNennungen.Where(n => n.NenngeldBezahltAm is null).Sum(n => n.Nenngeld))</th>
+                        </tr>
+                    </tfoot>
+                </table>
+                <p class="legende">Gäste und Verpflegung zählen nur Gespanne mit Startplatz. Wird ein Platz frei, rückt die Warteliste automatisch nach.</p>
+            }
+
+            <h3>Verpflegung</h3>
+            <table class="liste kompakt">
+                <tbody>
+                    <tr><td>Hundeführer mit Startplatz</td><td class="zahl">@verpflegung.Hundefuehrer</td></tr>
+                    <tr><td>Gäste</td><td class="zahl">@verpflegung.Gaeste</td></tr>
+                    <tr><td>Prüfer</td><td class="zahl">@verpflegung.Pruefer</td></tr>
+                    <tr><td>Ausbilder am Prüfungstag</td><td class="zahl">@verpflegung.Ausbilder</td></tr>
+                    <tr><td>weitere Helfer</td><td class="zahl">@verpflegung.WeitereHelfer</td></tr>
+                </tbody>
+                <tfoot><tr><th>Gesamt</th><th class="zahl">@verpflegung.Gesamt</th></tr></tfoot>
+            </table>
+            <p class="legende">Wer zwei Rollen hat (z. B. Ausbilder und Prüfer), zählt einmal.</p>
+        </section>
+    }
+
+    @if (_ansicht is "liste" or "chip")
+    {
+        var losliste = starter.OrderBy(n => n.Losnummer ?? int.MaxValue).ThenBy(n => plaetze[n.Id!.Value].Position).ToList();
+        <section class="abrechnung">
+            <h2>@(_ansicht == "liste" ? "Prüfungsliste" : "Chip-Kontrolle") – Brauchbarkeitsprüfung @gewaehlt.Datum.ToString("dddd, dd.MM.yyyy")</h2>
+            <p>
+                @Zustand.Kursbezeichnung · Beginn @(gewaehlt.Beginn?.ToString("HH\\:mm") ?? "–") Uhr · Revier @(Zustand.Revier(gewaehlt.RevierId)?.Name ?? "–")
+                @if (gewaehlt.Lokal is not null) { <span> · Lokal @gewaehlt.Lokal</span> }
+            </p>
+            <p>
+                Richterobmann: @PrueferText(pruefer, gewaehlt.RichterobmannId) · Prüfer: @PrueferText(pruefer, gewaehlt.Richter2Id), @PrueferText(pruefer, gewaehlt.Richter3Id)
+            </p>
+            @if (losliste.Any(n => n.Losnummer is null))
+            {
+                <p class="befund gelb keindruck">Die Lose sind noch nicht (vollständig) gezogen – sortiert nach Eingang der Nennung.</p>
+            }
+            @if (_ansicht == "liste")
+            {
+                <table class="liste">
+                    <thead>
+                        <tr><th>Los</th><th>Hundeführer</th><th>Hund</th><th>Rasse</th><th>Geschl.</th><th>Wurfdatum</th><th>ZB-Nr.</th><th>Grundgehorsam</th><th>Schalenwild</th><th>Niederwild</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var n in losliste)
+                        {
+                            <tr>
+                                <td>@n.Losnummer</td>
+                                <td>@n.Fuehrer</td>
+                                <td>@n.Hund@(n.Zuchtbuchname is null ? "" : $" ({n.Zuchtbuchname})")</td>
+                                <td>@n.Rasse</td>
+                                <td>@(n.Geschlecht switch { Geschlecht.Ruede => "R", Geschlecht.Huendin => "H", _ => "" })</td>
+                                <td>@n.Wurfdatum?.ToString("dd.MM.yyyy")</td>
+                                <td>@n.Zuchtbuchnummer</td>
+                                <td>@(n.Gehorsam ? "☐" : "–")</td>
+                                <td>@(n.Schalenwild ? "☐" : "–")</td>
+                                <td>@(n.Niederwild ? "☐" : "–")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <table class="liste">
+                    <thead>
+                        <tr><th>Los</th><th>Hundeführer</th><th>Hund</th><th>Rasse</th><th>Chip-Nr.</th><th>Chip geprüft</th><th>Jagdschein</th><th>Ahnentafel</th><th>Impfpass</th><th>Lautnachweis</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var n in losliste)
+                        {
+                            <tr>
+                                <td>@n.Losnummer</td>
+                                <td>@n.Fuehrer</td>
+                                <td>@n.Hund</td>
+                                <td>@n.Rasse</td>
+                                <td>@(n.ChipNummer ?? "fehlt")</td>
+                                <td>☐</td><td>☐</td><td>☐</td><td>☐</td><td>☐</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            <p class="unterschrift">Richterobmann: ______________________________</p>
+        </section>
+    }
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> Anmeldezustand { get; set; } = default!;
+
+    // Nennungen, Besetzung und Listen enthalten Personendaten: nur mit Bearbeitungsrecht. Lesekonten sehen Termine und ihr eigenes Gespann.
+    private bool _darfBearbeiten;
+    private Sicht _sicht = Sicht.Eingeschraenkt;
+
+    private int? _tagId;
+    private string _ansicht = "nennungen";
+    private AnlegenFormular? _anlegen;
+    private TagFormular? _t;
+    private NennungFormular? _n;
+    private int? _nennungLoeschen;
+    private bool _loeschen, _speichert, _fehler;
+    private string? _meldung;
+
+    private List<TeilnehmerDaten> _teilnehmer = [];
+    private List<HundDaten> _hunde = [];
+    private List<PersonDaten> _personen = [];
+    private List<AusbilderDaten> _ausbilder = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var benutzer = (await Anmeldezustand).User;
+        _darfBearbeiten = Ansprueche.DarfBearbeiten(benutzer);
+        _sicht = Ansprueche.Sichtrechte(benutzer);
+    }
+
+    private sealed class AnlegenFormular
+    {
+        public List<DateOnly> Daten { get; set; } = [];
+        public int RevierId { get; set; }
+    }
+
+    private sealed class TagFormular
+    {
+        public DateOnly Datum { get; set; }
+        public TimeOnly? Beginn { get; set; }
+        public int RevierId { get; set; }
+        public DateOnly Vortag { get; set; }
+        public TimeOnly? VortagUhrzeit { get; set; }
+        public int MaxHunde { get; set; }
+        public DateOnly? Meldeschluss { get; set; }
+        public int? RichterobmannId { get; set; }
+        public int? Richter2Id { get; set; }
+        public int? Richter3Id { get; set; }
+        public HashSet<int> PrueferAmVortag { get; set; } = [];
+        public HashSet<int> AusbilderVortag { get; set; } = [];
+        public HashSet<int> AusbilderPruefung { get; set; } = [];
+        public int WeitereHelfer { get; set; }
+        public string? Lokal { get; set; }
+        public string? Bemerkung { get; set; }
+    }
+
+    private sealed class NennungFormular
+    {
+        public int? Id { get; set; }
+        public bool AusKurs { get; set; } = true;
+        public int KursteilnahmeId { get; set; }
+        public int HundId { get; set; }
+        public int FuehrerId { get; set; }
+        public int PruefungstagId { get; set; }
+        public DateOnly GenanntAm { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        /// <summary>Uhrzeit des ursprünglichen Eingangs; bleibt erhalten, solange das Datum nicht geändert wird.</summary>
+        public DateTimeOffset? Eingang { get; set; }
+        public bool Gehorsam { get; set; } = true;
+        public bool Schalenwild { get; set; }
+        public bool Niederwild { get; set; }
+        public int Gaeste { get; set; }
+        public decimal Nenngeld { get; set; }
+        public DateOnly? BezahltAm { get; set; }
+        public string? Bemerkung { get; set; }
+    }
+
+    private void Stammdaten()
+    {
+        _teilnehmer = Zustand.Teilnehmer().OrderBy(t => t.Nachname).ThenBy(t => t.Vorname).ToList();
+        _hunde = Zustand.Hunde();
+        _personen = Zustand.Personen();
+        _ausbilder = Zustand.Ausbilder();
+    }
+
+    private void AnlegenBeginnen()
+    {
+        _meldung = null;
+        var vorschlag = Zustand.PruefungsterminVorschlag();
+        _anlegen = new AnlegenFormular { Daten = vorschlag.ToList(), RevierId = Zustand.Pruefungsrevier ?? 0 };
+    }
+
+    private void Anlegen() => Ausfuehren(() =>
+    {
+        Zustand.PruefungstageAnlegen(_anlegen!.Daten, _anlegen.RevierId == 0 ? null : _anlegen.RevierId);
+        _anlegen = null;
+    });
+
+    private void Waehlen(PruefungstagDaten t)
+    {
+        Stammdaten();
+        _tagId = t.Id;
+        _n = null;
+        _loeschen = false;
+        _meldung = null;
+        _t = new TagFormular
+        {
+            Datum = t.Datum, Beginn = t.Beginn, RevierId = t.RevierId ?? 0, Vortag = t.Vortag, VortagUhrzeit = t.VortagUhrzeit,
+            MaxHunde = t.MaxHunde, Meldeschluss = t.Meldeschluss,
+            RichterobmannId = t.RichterobmannId, Richter2Id = t.Richter2Id, Richter3Id = t.Richter3Id,
+            PrueferAmVortag = t.PrueferAmVortag.ToHashSet(), AusbilderVortag = t.AusbilderVortag.ToHashSet(), AusbilderPruefung = t.AusbilderPruefung.ToHashSet(),
+            WeitereHelfer = t.WeitereHelfer, Lokal = t.Lokal, Bemerkung = t.Bemerkung,
+        };
+    }
+
+    private async Task TagSpeichern(PruefungstagDaten bisher)
+    {
+        var f = _t!;
+        // Wird der Prüfungstag verschoben, wandert der Vortag mit, sofern er nicht selbst geändert wurde.
+        var vortag = f.Datum != bisher.Datum && f.Vortag == bisher.Vortag ? f.Datum.AddDays(bisher.Vortag.DayNumber - bisher.Datum.DayNumber) : f.Vortag;
+        var d = bisher with
+        {
+            Datum = f.Datum, Beginn = f.Beginn, RevierId = f.RevierId == 0 ? null : f.RevierId, Vortag = vortag, VortagUhrzeit = f.VortagUhrzeit,
+            MaxHunde = f.MaxHunde, Meldeschluss = f.Meldeschluss,
+            RichterobmannId = f.RichterobmannId, Richter2Id = f.Richter2Id, Richter3Id = f.Richter3Id,
+            PrueferAmVortag = f.PrueferAmVortag.Order().ToList(), WeitereHelfer = f.WeitereHelfer, Lokal = f.Lokal, Bemerkung = f.Bemerkung,
+        };
+        _speichert = true;
+        try
+        {
+            _meldung = await Zustand.PruefungstagSpeichern(d, f.AusbilderVortag, f.AusbilderPruefung) ?? "Gespeichert.";
+            _fehler = false;
+            f.Vortag = vortag;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _meldung = ex.Message;
+            _fehler = true;
+        }
+        finally
+        {
+            _speichert = false;
+        }
+    }
+
+    private void NennungNeu(PruefungstagDaten tag)
+    {
+        Stammdaten();
+        _meldung = null;
+        _n = new NennungFormular { PruefungstagId = tag.Id, Nenngeld = Zustand.Kurs.Nenngeld };
+    }
+
+    private void NennungBearbeiten(NennungDaten n)
+    {
+        Stammdaten();
+        _meldung = null;
+        _n = new NennungFormular
+        {
+            Id = n.Id, AusKurs = n.AusDemKurs, KursteilnahmeId = n.KursteilnahmeId ?? 0, HundId = n.HundId, FuehrerId = n.FuehrerId,
+            PruefungstagId = n.PruefungstagId, GenanntAm = DateOnly.FromDateTime(n.GenanntAm.LocalDateTime), Eingang = n.GenanntAm,
+            Gehorsam = n.Gehorsam, Schalenwild = n.Schalenwild, Niederwild = n.Niederwild,
+            Gaeste = n.Gaeste, Nenngeld = n.Nenngeld, BezahltAm = n.NenngeldBezahltAm, Bemerkung = n.Bemerkung,
+        };
+    }
+
+    /// <summary>Gespann aus dem Kurs: Hund, Führer und Fächer aus der Kursteilnahme übernehmen.</summary>
+    private void GespannWaehlen(int kursteilnahmeId)
+    {
+        var f = _n!;
+        f.KursteilnahmeId = kursteilnahmeId;
+        if (_teilnehmer.FirstOrDefault(t => t.KursteilnahmeId == kursteilnahmeId) is not { } t) return;
+        f.HundId = t.HundId ?? 0;
+        f.FuehrerId = t.FuehrerId ?? 0;
+        var faecher = t.Ausbildung.Bereinigt();
+        f.Gehorsam = faecher.Gehorsam;
+        f.Schalenwild = faecher.Schalenwild;
+        f.Niederwild = faecher.Niederwild;
+    }
+
+    /// <summary>Kursfremder Hund: den üblichen Führer vorschlagen.</summary>
+    private void HundWaehlen(int hundId)
+    {
+        var f = _n!;
+        f.HundId = hundId;
+        if (f.FuehrerId == 0 && _hunde.FirstOrDefault(h => h.Id == hundId)?.FuehrerId is int fuehrer) f.FuehrerId = fuehrer;
+    }
+
+    private void NennungSpeichern() => Ausfuehren(() =>
+    {
+        var f = _n!;
+        if (f.AusKurs && f.KursteilnahmeId == 0) throw new InvalidOperationException("Bitte ein Gespann aus dem Kurs wählen.");
+        if (f.HundId == 0) throw new InvalidOperationException("Bitte einen Hund wählen.");
+        if (f.FuehrerId == 0) throw new InvalidOperationException("Bitte einen Hundeführer wählen.");
+
+        var eingang = f.Eingang is DateTimeOffset e && DateOnly.FromDateTime(e.LocalDateTime) == f.GenanntAm
+            ? e
+            : f.GenanntAm == DateOnly.FromDateTime(DateTime.Today) ? DateTimeOffset.Now : new DateTimeOffset(f.GenanntAm.ToDateTime(new TimeOnly(12, 0)));
+        var hund = _hunde.FirstOrDefault(h => h.Id == f.HundId)?.Rufname ?? "";
+        var fuehrer = _personen.FirstOrDefault(p => p.Id == f.FuehrerId);
+        Zustand.NennungSpeichern(new NennungDaten(
+            f.Id, f.PruefungstagId, f.HundId, f.FuehrerId, eingang, f.Gehorsam, f.Schalenwild, f.Niederwild,
+            f.Gaeste, f.Nenngeld, f.BezahltAm, null, f.Bemerkung), $"{fuehrer?.Vorname} {fuehrer?.Nachname} / {hund}");
+        _n = null;
+    });
+
+    private static void Umschalten(HashSet<int> menge, int id, bool an)
+    {
+        if (an) menge.Add(id); else menge.Remove(id);
+    }
+
+    private static string PrueferText(List<PrueferDaten> pruefer, int? id) =>
+        pruefer.FirstOrDefault(p => p.PersonId == id) is { } p ? p.Name + (p.Richternummer is null ? "" : $" ({p.Richternummer})") : "–";
+
+    private void Ausfuehren(Action aktion)
+    {
+        try
+        {
+            aktion();
+            _meldung = null;
+            _nennungLoeschen = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _meldung = ex.Message;
+            _fehler = true;
+        }
+    }
+
+    protected override void OnInitialized() => Zustand.Geaendert += Aktualisieren;
+    private void Aktualisieren() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Zustand.Geaendert -= Aktualisieren;
+}

@@ -89,6 +89,17 @@ Mit Demodaten gibt es lokal automatisch das Konto **admin** mit dem Passwort **d
 - **Ausbildung** je Gespann mit drei Haken: Grundgehorsam, Nachsuche auf Schalenwild, Nachsuche auf Niederwild. Zivil = nur Grundgehorsam, jagdlich = mindestens eine Nachsuche (dann ist Grundgehorsam Pflicht). Schweißgruppe nur mit Schalenwild.
 - **Zulassung zu Teil 2** (nur jagdlich): mindestens 60 % der stattgefundenen Gehorsams-Sonntage (aufgerundet; 11 → 7, 10 → 6). Ampel je Gespann, Anwärterliste nach Anwesenheit, Ausnahme nur mit Begründung (steht in der Historie). Befreit ist, wer nur Niederwild macht und dessen Hund die Brauchbarkeit schon bestanden hat.
 
+## Prüfungen
+
+- Seite **Prüfungen**: „Prüfungstage anlegen …“ schlägt die drei Sonntage nach dem letzten Trainingstag vor (Beginn 8:00 Uhr, Fährten am Vortag, Prüfungsrevier, höchstens 6 Hunde). Daten, Uhrzeiten und Revier lassen sich je Tag ändern; ein Termin vor oder am letzten Trainingstag wird abgelehnt, ein Termin an einem anderen Wochentag nur angemerkt.
+- **Besetzung** je Tag: Richterobmann und zwei weitere Verbandsprüfer (Personen mit Rolle „Prüfer“, Richternummer unter Personen), dazu wer am Vortag die Fährten abnimmt (mindestens einer). Fehlt etwas, steht der Tag auf „offen“.
+- **Ausbilder** am Vortag und am Prüfungstag werden als Einsätze erfasst und landen in der km-Abrechnung. Prüfer bekommen (noch) keine km.
+- **Nennungen**: Gespanne aus dem Kurs (Fächer aus der Ausbildung vorbelegt) oder kursfremde Gespanne (Hund und Führer vorher unter Hunde/Personen anlegen). Ein Hund wird je Kurs einmal genannt, alle Fächer am selben Tag; zum Wechsel des Tages die Nennung ändern. Nenngeld ist ein fester Betrag (Einstellungen), mit Bezahlt-Vermerk.
+- **Platzvergabe**: Gespanne aus dem Kurs, die bis zum Meldeschluss nennen, haben Vorrang (nach Eingang). Danach folgen alle übrigen nach Eingang; wer keinen Startplatz hat, steht auf der Warteliste und rückt nach, sobald ein Platz frei wird. Ohne Meldeschluss haben Kursteilnehmer immer Vorrang.
+- **Verpflegung** je Tag: Hundeführer mit Startplatz, ihre Gäste, Prüfer, Ausbilder am Prüfungstag und weitere Helfer (Zahl von Hand); Doppelrollen zählen einmal.
+- **Lose ziehen** legt die Startreihenfolge fest. Druck: **Prüfungsliste** (Los, Führer, Hund, Rasse, Geschlecht, Wurfdatum, ZB-Nr., Fächer zum Abhaken) und **Chip-Kontrolle** (Chip-Nr., Haken für Jagdschein, Ahnentafel, Impfpass, Lautnachweis).
+- Konten mit Leserecht sehen nur Termine und Platzzahl, mit verknüpfter Person zusätzlich den Stand der eigenen Nennung.
+
 ## Personen, Hunde, Orte und Gebühren
 
 - **Personen**: Anrede (Herr/Frau/divers), Titel, Hundeführer, Eigentümer, Ausbilder und Prüfer an einer Stelle; Doppelrollen sind möglich. Vereinsmitglied als Haken.
@@ -150,7 +161,7 @@ Die App verschickt selbst noch keine Mails; dafür bräuchte sie ein Absenderkon
 
 ## Nächste Schritte
 
-1. Migration „Auslagen“ erzeugen (siehe oben), dann mit echten Daten testen
+1. Migration „Pruefungen“ erzeugen (siehe oben), dann mit echten Daten testen
 2. km-Abrechnungszeitraum abschließen (danach gesperrt)
-3. Nachweise je Gespann, Prüfungen samt Kostenerstattung Prüfer, Druckliste Prüfung
-4. Login und Rollen, sobald die App gehostet wird
+3. Prüfungsergebnisse je Fach erfassen; Kostenerstattung für Prüfer
+4. Nachweise je Gespann (Chip-Kontrolle mit hinterlegten Nachweisen vorbelegen)

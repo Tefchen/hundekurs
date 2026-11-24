@@ -850,6 +850,9 @@ namespace Hundekurs.Daten.Migrations
                     b.Property<int>("MaxTrainingsplaetzeSchweiss")
                         .HasColumnType("INTEGER");
 
+                    b.Property<decimal>("Nenngeld")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.ToTable("Kurse");
@@ -1051,13 +1054,19 @@ namespace Hundekurs.Daten.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Bemerkung")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("ErstelltAm")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ErstelltVon")
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("Faecher")
+                    b.Property<int>("FuehrerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Gaeste")
                         .HasColumnType("INTEGER");
 
                     b.Property<DateTimeOffset?>("GeaendertAm")
@@ -1066,19 +1075,46 @@ namespace Hundekurs.Daten.Migrations
                     b.Property<string>("GeaendertVon")
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("KursteilnahmeId")
+                    b.Property<bool>("Gehorsam")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("GenanntAm")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("HundId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("KursteilnahmeId")
                         .HasColumnType("INTEGER");
 
                     b.Property<int?>("Losnummer")
                         .HasColumnType("INTEGER");
 
-                    b.Property<bool>("NenngeldBezahlt")
+                    b.Property<bool>("NachsucheNiederwild")
                         .HasColumnType("INTEGER");
+
+                    b.Property<bool>("NachsucheSchalenwild")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("Nenngeld")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("NenngeldBezahltAm")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("PruefungstagId")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("FuehrerId");
+
+                    b.HasIndex("HundId");
+
+                    b.HasIndex("KursteilnahmeId");
+
+                    b.HasIndex("PruefungstagId", "HundId")
+                        .IsUnique();
 
                     b.ToTable("Nennungen");
                 });
@@ -1185,6 +1221,8 @@ namespace Hundekurs.Daten.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("NennungId");
+
                     b.ToTable("Pruefungsergebnisse");
                 });
 
@@ -1193,6 +1231,9 @@ namespace Hundekurs.Daten.Migrations
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("Bemerkung")
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("ErstelltAm")
                         .HasColumnType("TEXT");
@@ -1212,13 +1253,23 @@ namespace Hundekurs.Daten.Migrations
                     b.Property<string>("Lokal")
                         .HasColumnType("TEXT");
 
-                    b.Property<int?>("PruefungsleitungId")
+                    b.Property<int>("MaxHunde")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly?>("Meldeschluss")
+                        .HasColumnType("TEXT");
+
+                    b.PrimitiveCollection<string>("PrueferAmVortag")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<int?>("Richter2Id")
                         .HasColumnType("INTEGER");
 
                     b.Property<int?>("Richter3Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RichterobmannId")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("TerminId")
@@ -1227,7 +1278,21 @@ namespace Hundekurs.Daten.Migrations
                     b.Property<string>("Treiber")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("WeitereHelfer")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("HelferStandruheId");
+
+                    b.HasIndex("Richter2Id");
+
+                    b.HasIndex("Richter3Id");
+
+                    b.HasIndex("RichterobmannId");
+
+                    b.HasIndex("TerminId")
+                        .IsUnique();
 
                     b.ToTable("Pruefungstage");
                 });
@@ -2017,6 +2082,76 @@ namespace Hundekurs.Daten.Migrations
                         .HasForeignKey("KursteilnahmeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Hundekurs.Domain.Nennung", b =>
+                {
+                    b.HasOne("Hundekurs.Domain.Person", "Fuehrer")
+                        .WithMany()
+                        .HasForeignKey("FuehrerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Hundekurs.Domain.Hund", "Hund")
+                        .WithMany()
+                        .HasForeignKey("HundId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Hundekurs.Domain.Kursteilnahme", null)
+                        .WithMany()
+                        .HasForeignKey("KursteilnahmeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Hundekurs.Domain.Pruefungstag", null)
+                        .WithMany()
+                        .HasForeignKey("PruefungstagId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Fuehrer");
+
+                    b.Navigation("Hund");
+                });
+
+            modelBuilder.Entity("Hundekurs.Domain.Pruefungsergebnis", b =>
+                {
+                    b.HasOne("Hundekurs.Domain.Nennung", null)
+                        .WithMany()
+                        .HasForeignKey("NennungId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Hundekurs.Domain.Pruefungstag", b =>
+                {
+                    b.HasOne("Hundekurs.Domain.Person", null)
+                        .WithMany()
+                        .HasForeignKey("HelferStandruheId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Hundekurs.Domain.Person", null)
+                        .WithMany()
+                        .HasForeignKey("Richter2Id")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Hundekurs.Domain.Person", null)
+                        .WithMany()
+                        .HasForeignKey("Richter3Id")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Hundekurs.Domain.Person", null)
+                        .WithMany()
+                        .HasForeignKey("RichterobmannId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Hundekurs.Domain.Termin", "Termin")
+                        .WithOne()
+                        .HasForeignKey("Hundekurs.Domain.Pruefungstag", "TerminId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Termin");
                 });
 
             modelBuilder.Entity("Hundekurs.Domain.Sequenzpaar", b =>

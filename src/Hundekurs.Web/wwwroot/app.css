@@ -55,7 +55,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 button.primaer { background: var(--gruen); color: white; border-color: var(--gruen); }
 
 input, select { font: inherit; padding: 0.25rem 0.4rem; border: 1px solid var(--linie); border-radius: 4px; }
-input[type=checkbox] { padding: 0; }
+input[type=checkbox], input[type=radio] { padding: 0; }
 
 .werkzeuge { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0.5rem 0 1rem; }
 .werkzeuge label { display: flex; gap: 0.4rem; align-items: center; }
@@ -149,7 +149,7 @@ a.knopf.primaer { background: var(--gruen); color: white; border-color: var(--gr
 .formular { background: white; border: 1px solid var(--linie); border-radius: 6px; padding: 0.4rem 1rem 0.8rem; margin: 1rem 0; max-width: 60rem; }
 .formular .felder { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 0.6rem 1rem; margin: 0.6rem 0; }
 .formular label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.9rem; }
-.formular label:has(input[type=checkbox]) { flex-direction: row; align-items: center; }
+.formular label:has(input[type=checkbox]), .formular label:has(input[type=radio]) { flex-direction: row; align-items: center; }
 button.gefahr { background: var(--rot); color: white; border-color: var(--rot); }
 tr.inaktiv td { color: var(--grau); }
 

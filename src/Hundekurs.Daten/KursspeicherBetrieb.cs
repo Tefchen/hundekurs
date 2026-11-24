@@ -4,7 +4,7 @@ using P = Hundekurs.Planung;
 
 namespace Hundekurs.Daten;
 
-public sealed record KursEinstellungen(int KursId, string Bezeichnung, int? Jahr, decimal KmSatz, int? GehorsamGelaendeId, int? ApportierGelaendeId);
+public sealed record KursEinstellungen(int KursId, string Bezeichnung, int? Jahr, decimal KmSatz, int? GehorsamGelaendeId, int? ApportierGelaendeId, decimal Nenngeld = 0);
 
 public sealed record GelaendeDaten(int? Id, string Bezeichnung, IReadOnlyList<int> FachIds, int? RevierId, string? Treffpunkt, double? Breite, double? Laenge, bool Aktiv = true);
 
@@ -27,16 +27,18 @@ public sealed partial class Kursspeicher
     {
         using var db = fabrik.CreateDbContext();
         var k = db.Kurse.AsNoTracking().Single(x => x.Id == kursId);
-        return new KursEinstellungen(k.Id, k.Bezeichnung, k.Jahr, k.KmSatz, k.GehorsamGelaendeId, k.ApportierGelaendeId);
+        return new KursEinstellungen(k.Id, k.Bezeichnung, k.Jahr, k.KmSatz, k.GehorsamGelaendeId, k.ApportierGelaendeId, k.Nenngeld);
     }
 
     public void KursEinstellungenSpeichern(KursEinstellungen e)
     {
         if (e.KmSatz is < 0 or > 5) throw new InvalidOperationException("Der km-Satz muss zwischen 0 und 5 € liegen.");
+        if (e.Nenngeld < 0) throw new InvalidOperationException("Das Nenngeld darf nicht negativ sein.");
         using var db = fabrik.CreateDbContext();
         var k = db.Kurse.Single(x => x.Id == e.KursId);
         k.Bezeichnung = string.IsNullOrWhiteSpace(e.Bezeichnung) ? k.Bezeichnung : e.Bezeichnung.Trim();
         k.KmSatz = e.KmSatz;
+        k.Nenngeld = Math.Round(e.Nenngeld, 2, MidpointRounding.AwayFromZero);
 
         // Neuer Standardort gilt auch für alle noch geplanten Termine
         if (k.GehorsamGelaendeId != e.GehorsamGelaendeId)

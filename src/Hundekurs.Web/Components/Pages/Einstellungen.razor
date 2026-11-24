@@ -82,6 +82,7 @@
     <div class="felder">
         <label>Bezeichnung <input @bind="_bezeichnung" /></label>
         <label>km-Satz (€ je km, Hin- und Rückweg) <input type="number" step="0.01" min="0" @bind="_kmSatz" /></label>
+        <label>Nenngeld Prüfung (€ je Nennung) <input type="number" step="0.01" min="0" @bind="_nenngeld" /></label>
         <label>
             Ort für Teil 1 (Gehorsam)
             <select @bind="_gehorsamOrt">
@@ -236,7 +237,7 @@
     private bool _verschiebenBestaetigen;
     private bool _bestaetigen;
     private string _bezeichnung = "";
-    private decimal _kmSatz;
+    private decimal _kmSatz, _nenngeld;
     private int _gehorsamOrt, _apportierOrt;
     private OrtFormular? _ort;
     private List<FachFormular> _faecher = [];
@@ -256,6 +257,7 @@
     {
         _bezeichnung = Zustand.Kurs.Bezeichnung;
         _kmSatz = Zustand.Kurs.KmSatz;
+        _nenngeld = Zustand.Kurs.Nenngeld;
         _gehorsamOrt = Zustand.Kurs.GehorsamGelaendeId ?? 0;
         _apportierOrt = Zustand.Kurs.ApportierGelaendeId ?? 0;
         _faecher = Zustand.Faecher.Select(f => new FachFormular
@@ -323,6 +325,7 @@
         {
             Bezeichnung = _bezeichnung,
             KmSatz = _kmSatz,
+            Nenngeld = _nenngeld,
             GehorsamGelaendeId = _gehorsamOrt == 0 ? null : _gehorsamOrt,
             ApportierGelaendeId = _apportierOrt == 0 ? null : _apportierOrt,
         });

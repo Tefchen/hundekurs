@@ -59,6 +59,16 @@ else
         }
     </p>
 }
+@{
+    var pruefungstage = Zustand.Pruefungstage();
+}
+@if (pruefungstage.Count > 0)
+{
+    <p>
+        Prüfungen: @string.Join(", ", pruefungstage.Select(p => p.Datum.ToString("ddd dd.MM.yyyy")))
+        · <a href="pruefungen">Termine und Nennungen</a>
+    </p>
+}
 <NurBearbeiten>
     <p>
         km-Berechnung: @(Zustand.RoutendienstVerfuegbar ? "Routendienst eingerichtet" : "kein Routendienst – km nur von Hand")

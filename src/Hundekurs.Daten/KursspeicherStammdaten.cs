@@ -10,7 +10,8 @@ public sealed record FachDaten(int? Id, string Bezeichnung, Fachbereich Bereich,
 public sealed record PersonDaten(
     int? Id, string Vorname, string Nachname, string? Strasse, string? Plz, string? Ort, string? Telefon, string? EMail,
     bool Vereinsmitglied, bool Ausbilder = false, bool Pruefer = false,
-    IReadOnlyList<string>? Hunde = null, bool HatKoordinaten = false, Anrede Anrede = Anrede.KeineAngabe, string? Titel = null)
+    IReadOnlyList<string>? Hunde = null, bool HatKoordinaten = false, Anrede Anrede = Anrede.KeineAngabe, string? Titel = null,
+    string? Richternummer = null)
 {
     public string Anzeigename => $"{Nachname}, {Titel} {Vorname}".Replace("  ", " ").Trim(' ', ',');
 
@@ -98,7 +99,7 @@ public sealed partial class Kursspeicher
                 rollen[p.Id].Contains(Rolle.Ausbilder), rollen[p.Id].Contains(Rolle.Richter),
                 hunde.Where(h => h.FuehrerId == p.Id || h.EigentuemerId == p.Id)
                     .Select(h => h.Rufname + (h.EigentuemerId == p.Id && h.FuehrerId != p.Id ? " (Eigentum)" : "")).ToList(),
-                p.Breitengrad is not null && p.Laengengrad is not null, p.Anrede, p.Titel))
+                p.Breitengrad is not null && p.Laengengrad is not null, p.Anrede, p.Titel, p.Richternummer))
             .ToList();
     }
 
@@ -116,6 +117,7 @@ public sealed partial class Kursspeicher
         person.Telefon = Leer(d.Telefon);
         person.EMail = Leer(d.EMail);
         person.Vereinsmitglied = d.Vereinsmitglied;
+        person.Richternummer = d.Pruefer ? Leer(d.Richternummer) : person.Richternummer;
         AdresseSetzen(db, person, d.Strasse, d.Plz, d.Ort);
         db.SaveChanges();
 
@@ -133,6 +135,8 @@ public sealed partial class Kursspeicher
             throw new InvalidOperationException("Die Person ist als Hundeführer in einem Kurs angemeldet.");
         if (db.Einsaetze.Any(e => e.PersonId == personId))
             throw new InvalidOperationException("Für die Person sind Einsätze (km) erfasst.");
+        if (db.Nennungen.Any(n => n.FuehrerId == personId))
+            throw new InvalidOperationException("Die Person ist als Hundeführer zu einer Prüfung genannt.");
         if (db.Auslagen.Any(a => a.PersonId == personId))
             throw new InvalidOperationException("Für die Person sind Auslagen erfasst.");
         if (db.Kursrollen.Any(r => r.PersonId == personId))
@@ -234,6 +238,8 @@ public sealed partial class Kursspeicher
         using var db = fabrik.CreateDbContext();
         if (db.Kursteilnahmen.Any(t => t.HundId == hundId))
             throw new InvalidOperationException("Der Hund ist in einem Kurs angemeldet. Bitte zuerst dort abmelden.");
+        if (db.Nennungen.Any(n => n.HundId == hundId))
+            throw new InvalidOperationException("Der Hund ist zu einer Prüfung genannt. Bitte zuerst die Nennung löschen.");
         db.Hunde.Remove(db.Hunde.Single(h => h.Id == hundId));
         db.SaveChanges();
     }

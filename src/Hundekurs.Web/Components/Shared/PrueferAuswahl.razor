@@ -1,0 +1,17 @@
+@* Auswahl eines Verbandsprüfers (Personen mit der Rolle Prüfer im Kurs). *@
+<select value="@(Wert?.ToString() ?? "0")" @onchange="Gewaehlt">
+    <option value="0">– noch offen –</option>
+    @foreach (var p in Pruefer)
+    {
+        <option value="@p.PersonId">@p.Name@(p.Richternummer is null ? "" : $" ({p.Richternummer})")</option>
+    }
+</select>
+
+@code {
+    [Parameter, EditorRequired] public List<PrueferDaten> Pruefer { get; set; } = [];
+    [Parameter] public int? Wert { get; set; }
+    [Parameter] public EventCallback<int?> WertChanged { get; set; }
+
+    private Task Gewaehlt(ChangeEventArgs e) =>
+        WertChanged.InvokeAsync(int.TryParse(e.Value as string, out var id) && id != 0 ? id : null);
+}

@@ -10,6 +10,8 @@ public class Kurs : Entitaet
     /// <summary>Helfer kommen aus der Gruppe, die an dem Tag nicht auf Schweiß ist.</summary>
     public bool HelferAusAndererGruppe { get; set; } = true;
     public decimal KmSatz { get; set; } = 0.30m;
+    /// <summary>Nenngeld je Nennung zur Prüfung (fester Betrag für alle).</summary>
+    public decimal Nenngeld { get; set; }
     /// <summary>Standardort für Teil 1 (Gehorsam).</summary>
     public int? GehorsamGelaendeId { get; set; }
     /// <summary>Standardort für die Apportierarbeit.</summary>

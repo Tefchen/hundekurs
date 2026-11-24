@@ -45,6 +45,10 @@
             <label><input type="checkbox" @bind="_f.Vereinsmitglied" /> Vereinsmitglied</label>
             <label><input type="checkbox" @bind="_f.Ausbilder" /> Ausbilder im Kurs</label>
             <label><input type="checkbox" @bind="_f.Pruefer" /> Prüfer</label>
+            @if (_f.Pruefer)
+            {
+                <label>Richternummer <input @bind="_f.Richternummer" size="8" /></label>
+            }
         </div>
         <p class="legende">Doppelrollen sind möglich. Bei der km-Abrechnung zählt je Tag nur eine Fahrt.</p>
         <div class="werkzeuge">
@@ -69,7 +73,7 @@
                 <td>
                     @if (p.Vereinsmitglied) { <span class="etikett grau">Mitglied</span> }
                     @if (p.Ausbilder) { <span class="etikett">Ausbilder</span> }
-                    @if (p.Pruefer) { <span class="etikett">Prüfer</span> }
+                    @if (p.Pruefer) { <span class="etikett">Prüfer@(p.Richternummer is null ? "" : $" {p.Richternummer}")</span> }
                     @if (_fuehrer.Contains(p.Id!.Value)) { <span class="etikett grau">Hundeführer</span> }
                 </td>
                 <td>@string.Join(", ", p.Hunde ?? [])</td>
@@ -116,6 +120,7 @@
         public bool Vereinsmitglied { get; set; }
         public bool Ausbilder { get; set; }
         public bool Pruefer { get; set; }
+        public string? Richternummer { get; set; }
     }
 
     private List<PersonDaten> _personen = [];
@@ -148,7 +153,7 @@
         _f = new Formular
         {
             Id = p.Id, Anrede = p.Anrede, Titel = p.Titel, Vorname = p.Vorname, Nachname = p.Nachname, Strasse = p.Strasse, Plz = p.Plz, Ort = p.Ort,
-            Telefon = p.Telefon, EMail = p.EMail, Vereinsmitglied = p.Vereinsmitglied, Ausbilder = p.Ausbilder, Pruefer = p.Pruefer,
+            Telefon = p.Telefon, EMail = p.EMail, Vereinsmitglied = p.Vereinsmitglied, Ausbilder = p.Ausbilder, Pruefer = p.Pruefer, Richternummer = p.Richternummer,
         };
         _meldung = null;
     }
@@ -158,7 +163,7 @@
         if (_f is null) return;
         var f = _f;
         Ausfuehren(() => Zustand.PersonSpeichern(new PersonDaten(f.Id, f.Vorname, f.Nachname, f.Strasse, f.Plz, f.Ort, f.Telefon, f.EMail,
-            f.Vereinsmitglied, f.Ausbilder, f.Pruefer, Anrede: f.Anrede, Titel: f.Titel)));
+            f.Vereinsmitglied, f.Ausbilder, f.Pruefer, Anrede: f.Anrede, Titel: f.Titel, Richternummer: f.Richternummer)));
         if (_meldung is null) _f = null;
     }
 
